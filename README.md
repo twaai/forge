@@ -66,7 +66,7 @@ Requires **Python 3.9+**. Works on Linux, macOS, and Windows.
 ### Option A — clone & run (no install)
 
 ```bash
-git clone <your-repo-url> forge
+git clone https://github.com/twaai/forge.git
 cd forge
 python -m venv .venv
 
