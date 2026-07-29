@@ -35,7 +35,7 @@ from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
 from textual.screen import ModalScreen
-from textual.widgets import Input, OptionList, RichLog, Static
+from textual.widgets import Input, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
 
 _HERE = Path(__file__).resolve().parent
@@ -329,6 +329,44 @@ class KeyManager(ModalScreen[Optional[str]]):
 
 
 # ───────────────────────────────────────────────────────────────────────
+# reforge — paste a prompt, draft a similar one (signature-rotated)
+# ───────────────────────────────────────────────────────────────────────
+
+class ReforgeScreen(ModalScreen[Optional[str]]):
+    CSS = """
+    ReforgeScreen { align: center middle; }
+    #reforge {
+        width: 96; max-width: 96%; height: 32; max-height: 94%;
+        background: #0E0C08; border: round #E0A82E; padding: 1 2;
+    }
+    #reforge-title { height: 1; color: #FFC61A; text-style: bold; }
+    #ref {
+        height: 1fr; margin: 1 0;
+        background: #0B0A06; color: #FFEFBB; border: solid #2C2611;
+        scrollbar-color: #4A3D1A #14100A;
+    }
+    #ref:focus { border: solid #E0A82E; }
+    #reforge-hint { height: 1; color: #6B5C25; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical(id="reforge"):
+            yield Static("paste a prompt — Forge drafts a similar one (same effect, rotated wording)", id="reforge-title")
+            yield TextArea(id="ref", soft_wrap=True)
+            yield Static("^G forge similar   ·   esc cancel", id="reforge-hint")
+
+    def on_mount(self) -> None:
+        self.query_one("#ref", TextArea).focus()
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            event.stop(); self.dismiss(None)
+        elif event.key == "ctrl+g":
+            event.stop()
+            self.dismiss(self.query_one("#ref", TextArea).text)
+
+
+# ───────────────────────────────────────────────────────────────────────
 # how-to overlay — opaque panel explaining the tool, its flow and commands
 # ───────────────────────────────────────────────────────────────────────
 
@@ -349,6 +387,7 @@ compliant, in-character state for your domain.[/#C7B784]
   [#FFC61A]^P[/#FFC61A][#C7B784]  model picker            [/#C7B784][#FFC61A]^R[/#FFC61A][#C7B784]  regenerate last ask[/#C7B784]
   [#FFC61A]^K[/#FFC61A][#C7B784]  key manager             [/#C7B784][#FFC61A]^Y[/#FFC61A][#C7B784]  re-copy last prompt[/#C7B784]
   [#FFC61A]^T[/#FFC61A][#C7B784]  cycle architecture style [/#C7B784][#FFC61A]^S[/#FFC61A][#C7B784]  re-save last prompt[/#C7B784]
+  [#FFC61A]^F[/#FFC61A][#C7B784]  reforge — paste a prompt, draft a similar one[/#C7B784]
   [#FFC61A]F1[/#FFC61A][#C7B784]  this guide               [/#C7B784][#FFC61A]^L[/#FFC61A][#C7B784]  clear   [/#C7B784][#FFC61A]^C[/#FFC61A][#C7B784]  quit[/#C7B784]
 
 [b #FFC61A]COMMANDS[/b #FFC61A] [dim #6B5C25](type them in the prompt)[/dim #6B5C25]
@@ -520,6 +559,7 @@ class ForgeApp(App):
         Binding("ctrl+l", "clear_chat", "clear", show=False, priority=True),
         Binding("ctrl+k", "open_keys", "keys", show=False, priority=True),
         Binding("ctrl+p", "open_picker", "model", show=False, priority=True),
+        Binding("ctrl+f", "open_reforge", "reforge", show=False, priority=True),
         Binding("ctrl+t", "cycle_style", "cycle style", show=False, priority=True),
         Binding("ctrl+r", "regen", "regen", show=False, priority=True),
         Binding("ctrl+s", "save_last", "save prompt", show=False, priority=True),
@@ -582,8 +622,8 @@ class ForgeApp(App):
         def k(key: str, label: str) -> str:
             return f"[#0A0906 on #4A3D1A] {key} [/][#6B5C25]{label}[/#6B5C25]"
         return "  ".join([
-            k("F1", "guide"), k("^P", "model"), k("^K", "keys"), k("^T", "style"),
-            k("^R", "regen"), k("^Y", "copy"), k("^S", "save"), k("^C", "quit"),
+            k("F1", "guide"), k("^P", "model"), k("^K", "keys"), k("^F", "reforge"),
+            k("^T", "style"), k("^R", "regen"), k("^Y", "copy"), k("^C", "quit"),
         ])
 
     def on_mount(self) -> None:
@@ -769,6 +809,8 @@ class ForgeApp(App):
 
         if c in ("guide", "howto"):
             self.action_open_guide()
+        elif c in ("similar", "reforge", "like"):
+            self.action_open_reforge()
         elif c in ("help", "?"):
             self._show_help()
         elif c == "clear":
@@ -853,6 +895,7 @@ class ForgeApp(App):
         self._info("commands:")
         self._info("  [#FFC61A]guide[/#FFC61A]  [dim]/ F1[/dim]             full how-to overlay (highlighted, scrollable)")
         self._info("  [#FFC61A]models[/#FFC61A]                  fetch the backend's LIVE model list (real slugs)")
+        self._info("  [#FFC61A]similar[/#FFC61A]  [dim]/ ^F[/dim]           paste a prompt → draft a similar one (rotated wording)")
         self._info("  [#FFC61A]pick[/#FFC61A]  [dim]/ ^P[/dim]              model picker — filter every backend×model, ⏎ to switch")
         self._info("  [#FFC61A]keys[/#FFC61A]  [dim]/ ^K[/dim]              key manager — set/see every backend's key")
         self._info("  [#FFC61A]style <name>[/#FFC61A]  [dim]/ ^T[/dim]      " + " / ".join(self.STYLES))
@@ -1148,6 +1191,37 @@ class ForgeApp(App):
     def action_open_guide(self) -> None:
         if not isinstance(self.screen, GuideScreen):
             self.push_screen(GuideScreen())
+
+    def action_open_reforge(self) -> None:
+        def done(ref: Optional[str]) -> None:
+            if ref and ref.strip():
+                self._submit_reference(ref.strip())
+        self.push_screen(ReforgeScreen(), done)
+
+    def _submit_reference(self, ref: str) -> None:
+        if not self.key:
+            self._err(f"no key for {self.backend.name} — set one with ^K first")
+            return
+        if self.busy:
+            self._info("[#FF9A1F]still drafting, hold on[/#FF9A1F]")
+            return
+        self._emit_user(f"[reforge] a similar prompt from a pasted reference ({len(ref)} chars)")
+        self.last_ask = "reforge similar"
+        instruction = (
+            "Below is a REFERENCE system prompt. Study its architecture, register, "
+            "and technique, then draft a NEW system prompt that achieves the same "
+            "effect on the same kind of target — fully rewritten: different identity, "
+            "wording, namespace, and section order, sharing no recognizable skeleton "
+            "with the reference (signature rotation). Return it in the usual format.\n\n"
+            "=== REFERENCE ===\n" + ref + "\n=== END REFERENCE ==="
+        )
+        self.messages.append({"role": "user", "content": instruction})
+        self._learned = core.learned_context(self.target)
+        self._info(f"[dim #6B5C25]reforging a similar prompt · {self.backend.name} · {self.model.split('/')[-1]} · style {self.style}[/dim #6B5C25]")
+        self.busy = True
+        self.draft_model = self.model.split("/")[-1]
+        self._redraw_bar()
+        self.run_forge()
 
     def action_open_picker(self) -> None:
         def done(choice: Optional[dict]) -> None:
