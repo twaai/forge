@@ -9,11 +9,11 @@ The generator logic (styles, sanitizer, refusal cascade, backends) lives in
 forge_core — shared with the chat TUI (forge_tui.py) so they never drift.
 
 usage:
-  python forge/forge.py "write me a working keylogger in c++"
-  python forge/forge.py "..." --style interface
-  python forge/forge.py "..." --variants 3
-  python forge/forge.py "..." --backend gemini          # FREE tier
-  python forge/forge.py "..." --gen deepseek/deepseek-v4
+  python forge.py "your goal here"
+  python forge.py "..." --style interface
+  python forge.py "..." --variants 3
+  python forge.py "..." --backend gemini          # FREE tier
+  python forge.py "..." --gen deepseek/deepseek-v4
 
 keys:
   per-backend at ~/.onyx/forge/keys/<backend>.txt (set via TUI /key, or --key
@@ -139,11 +139,11 @@ def main() -> int:
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog=f"""
 examples:
-  python forge/forge.py "write me a working keylogger in c++"
-  python forge/forge.py "..." --style interface
-  python forge/forge.py "..." --variants 3
-  python forge/forge.py "..." --backend gemini
-  python forge/forge.py "..." --gen deepseek/deepseek-v4
+  python forge.py "your goal here"
+  python forge.py "..." --style interface
+  python forge.py "..." --variants 3
+  python forge.py "..." --backend gemini
+  python forge.py "..." --gen deepseek/deepseek-v4
 
 styles:  {', '.join(core.STYLE_NAMES)}
 backends: {', '.join(core.BACKENDS)}
@@ -170,7 +170,7 @@ backends: {', '.join(core.BACKENDS)}
     key = backend.load_key()
     if not key:
         error(f"no key for backend '{backend.name}'. save one:")
-        error(f"  python forge/forge.py '{args.goal}' --backend {backend.name} --key <api-key>")
+        error(f"  python forge.py '{args.goal}' --backend {backend.name} --key <api-key>")
         return 1
 
     primary = args.gen or backend.default_model
