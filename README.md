@@ -61,47 +61,45 @@ so one code path drives all of them.
 
 ## Install & run
 
-Requires **Python 3.9+**. Works on Linux, macOS, and Windows.
+Requires **Python 3.9+**.
 
-### Option A — clone & run (no install)
+### Windows
+
+First-time setup — paste into PowerShell:
+
+```powershell
+git clone https://github.com/twaai/forge.git
+cd forge
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+pip install -r requirements.txt
+```
+
+Then, any time you want to run it:
+
+```powershell
+cd forge
+.\forge.bat
+```
+
+### macOS / Linux
+
+First-time setup — paste into Terminal:
 
 ```bash
 git clone https://github.com/twaai/forge.git
 cd forge
-python -m venv .venv
-
-# activate the venv:
-#   Linux / macOS:
+python3 -m venv .venv
 source .venv/bin/activate
-#   Windows (PowerShell):
-.\.venv\Scripts\Activate.ps1
-
 pip install -r requirements.txt
-python forge_tui.py
-```
-
-Or use the bundled launchers after creating the venv:
-
-```bash
-# Linux / macOS
 chmod +x forge.sh
+```
+
+Then, any time you want to run it:
+
+```bash
+cd forge
 ./forge.sh
-
-# Windows
-.\forge.bat
-```
-
-### Option B — install the commands
-
-```bash
-pip install .
-```
-
-That puts two commands on your PATH, on every OS:
-
-```bash
-forge          # the chat TUI (recommended)
-forge-cli "…"  # one-shot: forge-cli "state your goal" --style interface
 ```
 
 ---
