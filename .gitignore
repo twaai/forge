@@ -1,0 +1,35 @@
+# byte-compiled / caches
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+
+# virtual envs
+.venv/
+venv/
+env/
+
+# forge stores keys/config/memory/saved prompts in ~/.onyx/forge (outside the
+# repo) so they can't be committed — but never commit these if they ever appear
+# inside the tree by accident:
+keys/
+*.key
+config.json
+memory.json
+saved/
+.env
+.env.*
+
+# loose crafted-prompt drafts (personal output, not tool code)
+*_jb.txt
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# local profile — never commit
+profile.txt

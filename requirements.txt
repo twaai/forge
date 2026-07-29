@@ -1,0 +1,3 @@
+textual>=0.60
+openai>=1.30
+cryptography>=42
