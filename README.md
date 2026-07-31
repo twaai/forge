@@ -115,8 +115,15 @@ Launch, then:
 | **Ctrl+K** | key manager — set/see every backend's key |
 | **Ctrl+T** | cycle architecture style |
 | **Ctrl+R** | regenerate the last ask |
+| **Ctrl+F** | reforge panel — paste a prompt, then **^E** emulate (stay close) · **^G** reforge (rotate the signature away) · **^S** send as-is |
 | **Ctrl+Y / Ctrl+S** | re-copy / re-save the last prompt |
 | **Ctrl+C** | quit |
+
+**Ctrl+V** pastes from your real OS clipboard everywhere — keys, goals, prompts
+— not just text copied inside the app. A multi-line paste into the prompt bar
+**registers as a `⧉ paste +N` chip** (like Claude Code) rather than dumping the
+whole block: ⏎ emulates it, type a goal first to retarget, **^F** opens the
+panel, `/discard` drops it.
 
 Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 `/guide` for the overlay.
@@ -124,6 +131,7 @@ Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 ### Commands
 
 ```
+/emulate  /reforge       reforge panel (or Ctrl+F) — paste a prompt, emulate or rotate it
 /pick                    model picker (or Ctrl+P)
 /keys                    key manager  (or Ctrl+K)
 /models                  fetch the backend's LIVE model list (real slugs)
@@ -146,7 +154,7 @@ Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 ## Backends
 
 Every backend is an OpenAI-compatible endpoint, so one code path drives them all.
-Keys are stored per-backend at `~/.onyx/forge/keys/<backend>.txt` (set once via
+Keys are stored per-backend at `~/.forge/keys/<backend>.txt` (set once via
 **Ctrl+K**), and each also honors its env var.
 
 | backend | notes |
@@ -196,13 +204,15 @@ disk, not model training.
 
 ## Where your data lives
 
-Everything private lives **outside the repo**, under `~/.onyx/forge/`:
+Everything private lives **outside the repo**, under `~/.forge/`:
 
 ```
-~/.onyx/forge/keys/       API keys, one file per backend
-~/.onyx/forge/config.json remembered backend / model / style / temp / target
-~/.onyx/forge/memory.json per-target learning
-~/.onyx/forge/saved/      every crafted prompt, auto-saved
+~/.forge/keys/       API keys, one file per backend
+~/.forge/config.json remembered backend / model / style / temp / target
+~/.forge/memory.json per-target learning
+~/.forge/saved/      every crafted prompt, auto-saved
 ```
 
-Nothing sensitive is ever stored inside the repository tree.
+Nothing sensitive is ever stored inside the repository tree. (Upgrading from a
+pre-v2 install? Forge migrates your old `~/.onyx/forge/` home automatically on
+first run — keys, config, and learning carry over.)

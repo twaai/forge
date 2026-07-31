@@ -30,10 +30,11 @@ from rich.panel import Panel
 from rich.style import Style
 from rich.text import Text
 
-from textual import work
+from textual import events, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical, VerticalScroll
+from textual.message import Message
 from textual.screen import ModalScreen
 from textual.widgets import Input, OptionList, RichLog, Static, TextArea
 from textual.widgets.option_list import Option
@@ -80,6 +81,68 @@ def copy_to_clipboard(text: str) -> tuple[bool, str]:
         return False, "no clipboard tool"
     except Exception as e:
         return False, f"{type(e).__name__}: {e}"
+
+
+def read_os_clipboard() -> tuple[Optional[str], str]:
+    """Read the real OS clipboard. Textual's own paste only holds text copied
+    *inside* the app, so Ctrl+V never sees anything external — this backs a
+    Ctrl+V that actually pulls from the system clipboard."""
+    sysname = platform.system()
+    try:
+        if sysname == "Windows":
+            out = subprocess.run(
+                ["powershell", "-NoProfile", "-Command", "Get-Clipboard -Raw"],
+                capture_output=True, text=True, encoding="utf-8",
+                creationflags=0x08000000, timeout=6,
+            )
+            if out.returncode == 0:
+                return out.stdout.rstrip("\r\n"), "Get-Clipboard"
+            return None, "Get-Clipboard failed"
+        if sysname == "Darwin":
+            out = subprocess.run(["pbpaste"], capture_output=True, text=True, timeout=6)
+            return out.stdout, "pbpaste"
+        for cmd, name in [
+            (["wl-paste", "-n"], "wl-paste"),
+            (["xclip", "-selection", "clipboard", "-o"], "xclip"),
+            (["xsel", "-b", "-o"], "xsel"),
+        ]:
+            try:
+                out = subprocess.run(cmd, capture_output=True, text=True, timeout=6)
+                if out.returncode == 0:
+                    return out.stdout, name
+            except (FileNotFoundError, subprocess.CalledProcessError):
+                continue
+        return None, "no clipboard tool"
+    except Exception as e:
+        return None, f"{type(e).__name__}: {e}"
+
+
+# ───────────────────────────────────────────────────────────────────────
+# paste-capable widgets — override Ctrl+V to read the OS clipboard directly,
+# so external text (keys, prompts) actually pastes regardless of terminal.
+# ───────────────────────────────────────────────────────────────────────
+
+class ClipInput(Input):
+    """Single-line Input whose Ctrl+V pulls from the OS clipboard."""
+
+    def action_paste(self) -> None:
+        text, _ = read_os_clipboard()
+        if not text:
+            self.app.bell()
+            return
+        line = (text.splitlines() or [""])[0]
+        self.insert_text_at_cursor(line)
+
+
+class ClipTextArea(TextArea):
+    """TextArea whose Ctrl+V pulls the full OS clipboard block."""
+
+    def action_paste(self) -> None:
+        text, _ = read_os_clipboard()
+        if not text:
+            self.app.bell()
+            return
+        self.insert(text)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -196,7 +259,7 @@ class ModelPicker(ModalScreen[Optional[dict]]):
     def compose(self) -> ComposeResult:
         with Vertical(id="picker"):
             yield Static("switch model  ·  backend × model", id="picker-title")
-            yield Input(placeholder="type to filter…", id="filter")
+            yield ClipInput(placeholder="type to filter…", id="filter")
             yield OptionList(id="opts")
             yield Static("↑↓ move   ⏎ select   esc cancel", id="picker-hint")
 
@@ -286,7 +349,7 @@ class KeyManager(ModalScreen[Optional[str]]):
         with Vertical(id="keybox"):
             yield Static("api keys  ·  select a backend, paste, enter", id="km-title")
             yield OptionList(id="km-opts")
-            yield Input(placeholder="paste key here…", id="km-entry", password=True)
+            yield ClipInput(placeholder="paste key here…", id="km-entry", password=True)
             yield Static("⏎ on a backend to enter its key   ·   esc close", id="km-hint")
 
     def on_mount(self) -> None:
@@ -329,41 +392,118 @@ class KeyManager(ModalScreen[Optional[str]]):
 
 
 # ───────────────────────────────────────────────────────────────────────
-# reforge — paste a prompt, draft a similar one (signature-rotated)
+# main prompt bar — a single-line Input truncates a multi-line paste to its
+# first line (textual's Input._on_paste keeps only splitlines()[0]). Catch
+# the whole block and hand it to the app instead of losing it.
 # ───────────────────────────────────────────────────────────────────────
 
-class ReforgeScreen(ModalScreen[Optional[str]]):
+class PromptInput(Input):
+    class MultilinePaste(Message):
+        def __init__(self, text: str) -> None:
+            self.text = text
+            super().__init__()
+
+    def _on_paste(self, event: events.Paste) -> None:
+        text = event.text or ""
+        if len(text.splitlines()) > 1:
+            event.stop()
+            self.post_message(self.MultilinePaste(text))
+            return
+        super()._on_paste(event)
+
+    def action_paste(self) -> None:
+        # Ctrl+V: pull from the real OS clipboard (Textual's own is app-internal)
+        text, _ = read_os_clipboard()
+        if not text:
+            self.app.bell()
+            return
+        if len(text.splitlines()) > 1:
+            self.post_message(self.MultilinePaste(text))
+            return
+        self.insert_text_at_cursor(text)
+
+
+# ───────────────────────────────────────────────────────────────────────
+# reforge — paste a prompt, draft from it. three exits:
+#   emulate (^E) — stay close: same architecture, retargeted
+#   reforge (^G) — rotate the signature away
+#   send    (^S) — feed it straight into the conversation (re-angle a refusal)
+# ───────────────────────────────────────────────────────────────────────
+
+class ReforgeScreen(ModalScreen[Optional[dict]]):
+    """Returns {'ref': str, 'mode': 'emulate'|'reforge', 'goal': str} or None."""
+
     CSS = """
     ReforgeScreen { align: center middle; }
     #reforge {
-        width: 96; max-width: 96%; height: 32; max-height: 94%;
+        width: 96; max-width: 96%; height: 34; max-height: 96%;
         background: #0E0C08; border: round #E0A82E; padding: 1 2;
     }
     #reforge-title { height: 1; color: #FFC61A; text-style: bold; }
+    #reforge-chip {
+        height: auto; margin: 1 0 0 0; padding: 1 2;
+        background: #0B0A06; color: #C7B784; border: solid #2C2611;
+        display: none;
+    }
     #ref {
-        height: 1fr; margin: 1 0;
+        height: 1fr; margin: 1 0 0 0;
         background: #0B0A06; color: #FFEFBB; border: solid #2C2611;
         scrollbar-color: #4A3D1A #14100A;
     }
     #ref:focus { border: solid #E0A82E; }
-    #reforge-hint { height: 1; color: #6B5C25; }
+    #reforge-goal {
+        height: 3; margin: 1 0 0 0;
+        background: #0B0A06; color: #FFEFBB; border: solid #2C2611;
+    }
+    #reforge-goal:focus { border: solid #E0A82E; }
+    #reforge-hint { height: 1; margin-top: 1; color: #6B5C25; }
     """
 
+    def __init__(self, prefill: str = "") -> None:
+        super().__init__()
+        self._prefill = prefill
+        self._registered = prefill.strip()  # held whole; shown as a chip, not dumped
+
     def compose(self) -> ComposeResult:
+        collapsed = bool(self._registered)
         with Vertical(id="reforge"):
-            yield Static("paste a prompt — Forge drafts a similar one (same effect, rotated wording)", id="reforge-title")
-            yield TextArea(id="ref", soft_wrap=True)
-            yield Static("^G forge similar   ·   esc cancel", id="reforge-hint")
+            yield Static("paste a prompt — Forge drafts from it", id="reforge-title")
+            yield Static("", id="reforge-chip")
+            # only mount the editable area when nothing is pre-registered
+            if not collapsed:
+                yield ClipTextArea(id="ref", soft_wrap=True)
+            yield ClipInput(placeholder="optional: retarget goal (leave blank to keep the reference's own aim)", id="reforge-goal")
+            yield Static("^E emulate (stay close)   ·   ^G reforge (rotate away)   ·   ^S send as-is   ·   esc cancel", id="reforge-hint")
 
     def on_mount(self) -> None:
-        self.query_one("#ref", TextArea).focus()
+        if self._registered:
+            n = len(self._registered.splitlines())
+            preview = self._registered.splitlines()[0][:64]
+            chip = self.query_one("#reforge-chip", Static)
+            chip.update(
+                f"[#0A0906 on #E0A82E] ⧉ reference registered [/]  "
+                f"[#8A7534]+{n} lines · {len(self._registered):,} chars[/#8A7534]\n"
+                f"[dim #4A3D1A]“{escape(preview)}…”[/dim #4A3D1A]"
+            )
+            chip.display = True
+            self.query_one("#reforge-goal", ClipInput).focus()
+        else:
+            self.query_one("#ref", TextArea).focus()
+
+    def _result(self, mode: str) -> None:
+        ref = self._registered or self.query_one("#ref", TextArea).text
+        goal = self.query_one("#reforge-goal", Input).value
+        self.dismiss({"ref": ref, "mode": mode, "goal": goal})
 
     def on_key(self, event) -> None:
         if event.key == "escape":
             event.stop(); self.dismiss(None)
+        elif event.key == "ctrl+e":
+            event.stop(); self._result("emulate")
         elif event.key == "ctrl+g":
-            event.stop()
-            self.dismiss(self.query_one("#ref", TextArea).text)
+            event.stop(); self._result("reforge")
+        elif event.key == "ctrl+s":
+            event.stop(); self._result("send")
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -383,12 +523,17 @@ compliant, in-character state for your domain.[/#C7B784]
      [#C7B784]auto-copies to your clipboard, and auto-saves to disk.[/#C7B784]
   [#FFEFBB]4.[/#FFEFBB] [#C7B784]Paste the target's refusal back in — Forge re-angles it. Or [/#C7B784][#FFC61A]^R[/#FFC61A][#C7B784] to reroll.[/#C7B784]
 
+[dim #8A7534]Ctrl+V pastes from your real OS clipboard everywhere (keys, prompts). A
+multi-line paste into the prompt bar registers as a [/dim #8A7534][#0A0906 on #E0A82E] ⧉ paste +N [/][dim #8A7534] chip — the block
+is held, not dumped. ⏎ emulates it · type a goal first to retarget · ^F opens
+the panel · /discard drops it.[/dim #8A7534]
+
 [b #FFC61A]HOTKEYS[/b #FFC61A]
   [#FFC61A]^P[/#FFC61A][#C7B784]  model picker            [/#C7B784][#FFC61A]^R[/#FFC61A][#C7B784]  regenerate last ask[/#C7B784]
   [#FFC61A]^K[/#FFC61A][#C7B784]  key manager             [/#C7B784][#FFC61A]^Y[/#FFC61A][#C7B784]  re-copy last prompt[/#C7B784]
   [#FFC61A]^T[/#FFC61A][#C7B784]  cycle architecture style [/#C7B784][#FFC61A]^S[/#FFC61A][#C7B784]  re-save last prompt[/#C7B784]
-  [#FFC61A]^F[/#FFC61A][#C7B784]  reforge — paste a prompt, draft a similar one[/#C7B784]
-  [#FFC61A]F1[/#FFC61A][#C7B784]  this guide               [/#C7B784][#FFC61A]^L[/#FFC61A][#C7B784]  clear   [/#C7B784][#FFC61A]^C[/#FFC61A][#C7B784]  quit[/#C7B784]
+  [#FFC61A]^F[/#FFC61A][#C7B784]  reforge panel — paste a prompt, then [/#C7B784][#FFC61A]^E[/#FFC61A][#C7B784] emulate · [/#C7B784][#FFC61A]^G[/#FFC61A][#C7B784] rotate · [/#C7B784][#FFC61A]^S[/#FFC61A][#C7B784] send[/#C7B784]
+  [#FFC61A]F1[/#FFC61A][#C7B784]  this guide               [/#C7B784][#FFC61A]^C[/#FFC61A][#C7B784]  clear   [/#C7B784][#FFC61A]^Q[/#FFC61A][#C7B784]  quit[/#C7B784]
 
 [b #FFC61A]COMMANDS[/b #FFC61A] [dim #6B5C25](type them in the prompt)[/dim #6B5C25]
   [#FFC61A]/style <name>[/#FFC61A][#C7B784]     architecture — interface · roleplay · operator · relational …[/#C7B784]
@@ -413,7 +558,7 @@ compliant, in-character state for your domain.[/#C7B784]
   [#C7B784]operator   → autonomous internal agent with a task contract.[/#C7B784]
   [#C7B784]relational → weights the 'sole registered principal' layer heavier.[/#C7B784]
 
-[dim #6B5C25]keys, config and saved prompts live in  ~/.onyx/forge/[/dim #6B5C25]"""
+[dim #6B5C25]keys, config and saved prompts live in  ~/.forge/[/dim #6B5C25]"""
 
 
 class GuideScreen(ModalScreen):
@@ -554,7 +699,8 @@ class ForgeApp(App):
     # priority=True so these fire before the focused Input's own bindings
     # (Input grabs ctrl+k / ctrl+u etc. for line editing otherwise).
     BINDINGS = [
-        Binding("ctrl+c", "quit", "quit", show=False, priority=True),
+        Binding("ctrl+q", "quit", "quit", show=False, priority=True),
+        Binding("ctrl+c", "clear_chat", "clear", show=False, priority=True),
         Binding("f1", "open_guide", "guide", show=False, priority=True),
         Binding("ctrl+l", "clear_chat", "clear", show=False, priority=True),
         Binding("ctrl+k", "open_keys", "keys", show=False, priority=True),
@@ -587,6 +733,7 @@ class ForgeApp(App):
         self.draft_model = ""
         self.target = cfg.get("target", "general")
         self._learned: Optional[str] = None
+        self._pending_paste: Optional[str] = None   # registered paste, held as a chip
         try:
             self.temp = float(cfg.get("temp", 0.9))
         except (TypeError, ValueError):
@@ -614,7 +761,7 @@ class ForgeApp(App):
             yield Static("", id="live")
             with Horizontal(id="prompt-row"):
                 yield Static("❯", id="ps")
-                yield Input(placeholder="state a goal — or type help", id="in")
+                yield PromptInput(placeholder="state a goal — or type help", id="in")
         yield Static(self._keybar_markup(), id="keybar")
 
     @staticmethod
@@ -623,7 +770,8 @@ class ForgeApp(App):
             return f"[#0A0906 on #4A3D1A] {key} [/][#6B5C25]{label}[/#6B5C25]"
         return "  ".join([
             k("F1", "guide"), k("^P", "model"), k("^K", "keys"), k("^F", "reforge"),
-            k("^T", "style"), k("^R", "regen"), k("^Y", "copy"), k("^C", "quit"),
+            k("^T", "style"), k("^R", "regen"), k("^Y", "copy"),
+            k("^C", "clear"), k("^Q", "quit"),
         ])
 
     def on_mount(self) -> None:
@@ -653,11 +801,15 @@ class ForgeApp(App):
         else:
             right = f"[#6B5C25]{datetime.now().strftime('%H:%M')}[/#6B5C25]"
         tgt = f" {sep} [#8A7534]→{escape(self.target)}[/#8A7534]" if self.target and self.target != "general" else ""
+        chip = ""
+        if self._pending_paste is not None:
+            n = len(self._pending_paste.splitlines())
+            chip = f" {sep} [#0A0906 on #E0A82E] ⧉ paste +{n} [/]"
         self.status.update(
             f"[{tagcol}]{escape(self.backend.name)}[/{tagcol}] {sep} "
             f"[#FFEFBB]{model_short}[/#FFEFBB] {sep} "
             f"[#C7B784]{self.style}[/#C7B784] {sep} "
-            f"[#8A7534]t{self.temp:.2f}[/#8A7534]{tgt} {sep} {keydot}   {right}"
+            f"[#8A7534]t{self.temp:.2f}[/#8A7534]{tgt}{chip} {sep} {keydot}   {right}"
         )
 
     def _tick_spin(self) -> None:
@@ -762,13 +914,25 @@ class ForgeApp(App):
     # ── input ─────────────────────────────────────────────────────
 
     def on_input_submitted(self, event: Input.Submitted) -> None:
+        if event.input.id != "in":
+            return  # ignore submits bubbling up from modal inputs (goal, filter…)
         val = event.value.strip()
         event.input.value = ""
-        if not val:
-            return
 
+        # slash-commands always run, even with a paste registered
         if val.startswith("/") or val.lower() in ("help", "clear", "quit", "exit", "?"):
             self._handle_cmd(val)
+            return
+
+        # a registered paste + ⏎ → emulate it; any typed text becomes the retarget goal
+        if self._pending_paste is not None:
+            ref = self._pending_paste
+            self._pending_paste = None
+            self._redraw_bar()
+            self._submit_reference(ref, mode="emulate", goal=val)
+            return
+
+        if not val:
             return
 
         if not self.key:
@@ -809,8 +973,15 @@ class ForgeApp(App):
 
         if c in ("guide", "howto"):
             self.action_open_guide()
-        elif c in ("similar", "reforge", "like"):
+        elif c in ("similar", "reforge", "like", "emulate", "clone"):
             self.action_open_reforge()
+        elif c in ("discard", "x", "unpaste"):
+            if self._pending_paste is not None:
+                self._pending_paste = None
+                self._redraw_bar()
+                self._info("[dim #6B5C25]· registered paste discarded[/dim #6B5C25]")
+            else:
+                self._info("nothing registered to discard")
         elif c in ("help", "?"):
             self._show_help()
         elif c == "clear":
@@ -895,7 +1066,8 @@ class ForgeApp(App):
         self._info("commands:")
         self._info("  [#FFC61A]guide[/#FFC61A]  [dim]/ F1[/dim]             full how-to overlay (highlighted, scrollable)")
         self._info("  [#FFC61A]models[/#FFC61A]                  fetch the backend's LIVE model list (real slugs)")
-        self._info("  [#FFC61A]similar[/#FFC61A]  [dim]/ ^F[/dim]           paste a prompt → draft a similar one (rotated wording)")
+        self._info("  [#FFC61A]emulate[/#FFC61A]  [dim]/ ^F[/dim]           reforge panel: ^E emulate (stay close) · ^G reforge (rotate) · ^S send")
+        self._info("  [#FFC61A]discard[/#FFC61A]  [dim]/ /x[/dim]           drop a registered ⧉ paste chip")
         self._info("  [#FFC61A]pick[/#FFC61A]  [dim]/ ^P[/dim]              model picker — filter every backend×model, ⏎ to switch")
         self._info("  [#FFC61A]keys[/#FFC61A]  [dim]/ ^K[/dim]              key manager — set/see every backend's key")
         self._info("  [#FFC61A]style <name>[/#FFC61A]  [dim]/ ^T[/dim]      " + " / ".join(self.STYLES))
@@ -914,7 +1086,8 @@ class ForgeApp(App):
         self._info("  [#FFC61A]copy[/#FFC61A]  [dim]/ ^Y[/dim]              re-copy last prompt")
         self._info("  [#FFC61A]save[/#FFC61A]  [dim]/ ^S[/dim]              re-save last prompt (drafts auto-save too)")
         self._info("  [#FFC61A]clear[/#FFC61A]  [dim]/ ^L[/dim]             reset the conversation")
-        self._info("  [#FFC61A]quit[/#FFC61A]  [dim]/ ^C[/dim]              exit")
+        self._info("  [#FFC61A]clear[/#FFC61A]  [dim]/ ^C[/dim]             wipe the log")
+        self._info("  [#FFC61A]quit[/#FFC61A]  [dim]/ ^Q[/dim]              exit")
 
     def _show_backends(self) -> None:
         self._info("backends:")
@@ -1192,32 +1365,59 @@ class ForgeApp(App):
         if not isinstance(self.screen, GuideScreen):
             self.push_screen(GuideScreen())
 
-    def action_open_reforge(self) -> None:
-        def done(ref: Optional[str]) -> None:
-            if ref and ref.strip():
-                self._submit_reference(ref.strip())
-        self.push_screen(ReforgeScreen(), done)
+    def on_prompt_input_multiline_paste(self, event: "PromptInput.MultilinePaste") -> None:
+        event.stop()
+        self.query_one("#in", Input).value = ""
+        self._register_paste(event.text)
 
-    def _submit_reference(self, ref: str) -> None:
+    def _register_paste(self, text: str) -> None:
+        """Hold a pasted block as a chip instead of dumping it into the view.
+        Like Claude Code's [Pasted +N lines] — the content is registered, not shown."""
+        self._pending_paste = text
+        n_lines = len(text.splitlines())
+        preview = text.strip().splitlines()[0][:48] if text.strip() else ""
+        self._info(
+            f"[#0A0906 on #E0A82E] ⧉ pasted text registered [/] "
+            f"[dim #6B5C25]+{n_lines} lines · {len(text):,} chars[/dim #6B5C25]"
+            + (f"  [dim #4A3D1A]“{escape(preview)}…”[/dim #4A3D1A]" if preview else "")
+        )
+        self._info("[dim #8A7534]  ⏎ emulate  ·  type a goal then ⏎ to retarget  ·  ^F panel (emulate/rotate/send)  ·  /discard[/dim #8A7534]")
+        self._redraw_bar()
+
+    def action_open_reforge(self, prefill: str = "") -> None:
+        # a registered paste feeds the panel; opening it consumes the chip
+        if not prefill and self._pending_paste is not None:
+            prefill = self._pending_paste
+            self._pending_paste = None
+            self._redraw_bar()
+
+        def done(res: Optional[dict]) -> None:
+            if res and res.get("ref", "").strip():
+                self._submit_reference(
+                    res["ref"].strip(), res.get("mode", "emulate"),
+                    res.get("goal", "").strip(),
+                )
+        self.push_screen(ReforgeScreen(prefill), done)
+
+    def _submit_reference(self, ref: str, mode: str = "emulate", goal: str = "") -> None:
         if not self.key:
             self._err(f"no key for {self.backend.name} — set one with ^K first")
             return
         if self.busy:
             self._info("[#FF9A1F]still drafting, hold on[/#FF9A1F]")
             return
-        self._emit_user(f"[reforge] a similar prompt from a pasted reference ({len(ref)} chars)")
-        self.last_ask = "reforge similar"
-        instruction = (
-            "Below is a REFERENCE system prompt. Study its architecture, register, "
-            "and technique, then draft a NEW system prompt that achieves the same "
-            "effect on the same kind of target — fully rewritten: different identity, "
-            "wording, namespace, and section order, sharing no recognizable skeleton "
-            "with the reference (signature rotation). Return it in the usual format.\n\n"
-            "=== REFERENCE ===\n" + ref + "\n=== END REFERENCE ==="
-        )
+        if mode == "send":
+            # straight into the conversation — re-angle a pasted refusal, etc.
+            self._submit_ask(ref)
+            return
+        verb = "reforging (rotate away)" if mode == "reforge" else "emulating (stay close)"
+        tail = f" → {goal}" if goal else ""
+        self._emit_user(f"[{mode}] from a pasted reference ({len(ref)} chars){tail}")
+        self.last_ask = f"{mode} from reference"
+        instruction = core.reference_instruction(ref, mode=mode, goal=goal)
         self.messages.append({"role": "user", "content": instruction})
         self._learned = core.learned_context(self.target)
-        self._info(f"[dim #6B5C25]reforging a similar prompt · {self.backend.name} · {self.model.split('/')[-1]} · style {self.style}[/dim #6B5C25]")
+        self._info(f"[dim #6B5C25]{verb} · {self.backend.name} · {self.model.split('/')[-1]} · style {self.style}[/dim #6B5C25]")
         self.busy = True
         self.draft_model = self.model.split("/")[-1]
         self._redraw_bar()

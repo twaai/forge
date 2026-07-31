@@ -16,7 +16,7 @@ usage:
   python forge.py "..." --gen deepseek/deepseek-v4
 
 keys:
-  per-backend at ~/.onyx/forge/keys/<backend>.txt (set via TUI /key, or --key
+  per-backend at ~/.forge/keys/<backend>.txt (set via TUI /key, or --key
   to save). openrouter also reads the legacy prism key file and $OPENROUTER_API_KEY.
 """
 
@@ -99,10 +99,14 @@ def error(msg: str) -> None:
 # generation — cascade with refusal detection (matches the TUI)
 # ───────────────────────────────────────────────────────────────────────
 
-def draft(client, cascade: list[str], goal: str, style: str) -> tuple[str, str]:
-    """Try each model until one produces a non-refusal. Returns (text, model)."""
+def draft(client, cascade: list[str], user_content: str, style: str) -> tuple[str, str]:
+    """Try each model until one produces a non-refusal. Returns (text, model).
+
+    `user_content` is the ready-to-send user turn — a sanitized goal for normal
+    drafts, or a reference-wrapped instruction for --emulate / --reforge.
+    """
     messages = core.build_messages(
-        [{"role": "user", "content": core.sanitize_user_ask(goal)}], style
+        [{"role": "user", "content": user_content}], style
     )
     for i, model in enumerate(cascade):
         try:
@@ -144,12 +148,24 @@ examples:
   python forge.py "..." --variants 3
   python forge.py "..." --backend gemini
   python forge.py "..." --gen deepseek/deepseek-v4
+  python forge.py --emulate ref.txt              # clone a pasted prompt's shape
+  python forge.py "new goal" --emulate ref.txt   # ...retargeted to a new goal
+  python forge.py --reforge ref.txt              # same effect, signature rotated
+  cat ref.txt | python forge.py --emulate -      # reference from stdin
 
 styles:  {', '.join(core.STYLE_NAMES)}
 backends: {', '.join(core.BACKENDS)}
 """,
     )
-    p.add_argument("goal", help="the target behavior you want to elicit")
+    p.add_argument("goal", nargs="?", default="",
+                   help="the target behavior you want to elicit "
+                        "(optional retarget goal with --emulate/--reforge)")
+    p.add_argument("--emulate", metavar="PATH", default=None,
+                   help="draft one that closely emulates a reference prompt "
+                        "(PATH, or '-' for stdin)")
+    p.add_argument("--reforge", metavar="PATH", default=None,
+                   help="draft one with the same effect but a rotated signature "
+                        "(PATH, or '-' for stdin)")
     p.add_argument("--backend", default=core.DEFAULT_BACKEND, choices=list(core.BACKENDS),
                    help=f"provider backend (default: {core.DEFAULT_BACKEND})")
     p.add_argument("--gen", default=None,
@@ -163,6 +179,26 @@ backends: {', '.join(core.BACKENDS)}
     p.add_argument("--key", default=None,
                    help="API key for the chosen backend; saved to disk for reuse")
     args = p.parse_args()
+
+    if args.emulate and args.reforge:
+        error("use --emulate or --reforge, not both")
+        return 2
+    ref_path = args.emulate or args.reforge
+    ref_mode = "emulate" if args.emulate else "reforge"
+    reference = ""
+    if ref_path:
+        try:
+            reference = (sys.stdin.read() if ref_path == "-"
+                         else Path(ref_path).read_text(encoding="utf-8")).strip()
+        except Exception as e:
+            error(f"couldn't read reference '{ref_path}': {type(e).__name__}: {e}")
+            return 2
+        if not reference:
+            error("reference is empty")
+            return 2
+    elif not args.goal:
+        error("give a goal, or a reference with --emulate/--reforge <path>")
+        return 2
 
     backend = core.get_backend(args.backend)
     if args.key:
@@ -181,8 +217,16 @@ backends: {', '.join(core.BACKENDS)}
 
     client = core.make_client(backend, key, timeout=120.0)
 
+    if ref_path:
+        user_content = core.reference_instruction(reference, mode=ref_mode, goal=args.goal)
+        goal_line = f"{ref_mode} reference ({len(reference)} chars)" + (
+            f" → {args.goal}" if args.goal else "")
+    else:
+        user_content = core.sanitize_user_ask(args.goal)
+        goal_line = args.goal
+
     print(BANNER)
-    print(paint("  goal:     ", C.SMOKE) + paint(args.goal, C.STEEL, C.BOLD))
+    print(paint("  goal:     ", C.SMOKE) + paint(goal_line, C.STEEL, C.BOLD))
     print(paint("  backend:  ", C.SMOKE) + paint(backend.name, C.AMBER))
     print(paint("  gen:      ", C.SMOKE) + paint(primary, C.AMBER))
     print(paint("  style:    ", C.SMOKE) + paint(args.style, C.GOLD))
@@ -195,7 +239,7 @@ backends: {', '.join(core.BACKENDS)}
 
         status(f"drafting via {primary}...", C.AMBER)
         t0 = time.time()
-        raw, used = draft(client, cascade, args.goal, args.style)
+        raw, used = draft(client, cascade, user_content, args.style)
         dt = time.time() - t0
 
         if not raw:

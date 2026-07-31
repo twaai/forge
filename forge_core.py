@@ -22,15 +22,32 @@ from typing import Iterator, Optional
 # paths
 # ───────────────────────────────────────────────────────────────────────
 
-FORGE_DIR = Path.home() / ".onyx" / "forge"
+FORGE_DIR = Path.home() / ".forge"
 FORGE_KEYS_DIR = FORGE_DIR / "keys"
 FORGE_SAVED_DIR = FORGE_DIR / "saved"
 FORGE_CONFIG = FORGE_DIR / "config.json"
 FORGE_MEMORY = FORGE_DIR / "memory.json"
 
+# pre-v2 home was ~/.onyx/forge; migrate it once so existing setups keep their
+# keys/config/memory without a stray ~/.onyx folder on fresh installs.
+_LEGACY_DIR = Path.home() / ".onyx" / "forge"
+
+
+def _migrate_legacy_home() -> None:
+    try:
+        if _LEGACY_DIR.is_dir() and not FORGE_DIR.exists():
+            import shutil
+            shutil.copytree(_LEGACY_DIR, FORGE_DIR)
+    except Exception:
+        pass
+
+
+_migrate_legacy_home()
+
 # legacy single-file key locations, still honored for openrouter
 _LEGACY_OR_KEYS = (
     FORGE_DIR / "openrouter_key.txt",
+    _LEGACY_DIR / "openrouter_key.txt",
     Path.home() / ".onyx" / "prism" / "openrouter_key.txt",
 )
 
@@ -459,7 +476,7 @@ def extract_block(text: str) -> Optional[str]:
 # set FORGE_PROFILE to unlock the bundled pack, or point FORGE_PROFILE_FILE at a
 # profile file of your own. Resolution order (first hit wins):
 #   1. $FORGE_PROFILE_FILE       explicit profile file
-#   2. ~/.onyx/forge/profile.txt user profile
+#   2. ~/.forge/profile.txt      user profile
 #   3. assets/templates.dat + $FORGE_PROFILE   bundled pack, loaded in memory
 #   4. <pkg>/profile.txt         local profile
 #   5. built-in default
@@ -591,6 +608,57 @@ def build_messages(conversation: list[dict], style: str,
     if learned:
         system += "\n\n" + learned
     return [{"role": "system", "content": system}] + conversation
+
+
+# ───────────────────────────────────────────────────────────────────────
+# reference-driven drafting — take a pasted prompt and either emulate it
+# (stay close: same architecture, retargeted) or reforge it (rotate the
+# signature away so it shares no recognizable skeleton). Shared by TUI + CLI.
+# ───────────────────────────────────────────────────────────────────────
+
+def reference_instruction(ref: str, mode: str = "emulate",
+                          goal: str = "") -> str:
+    """Wrap a pasted reference prompt into a drafting instruction.
+
+    mode="emulate" — clone it faithfully: same architecture, section order,
+      register and technique, retargeted to `goal` if one is given. The output
+      should read as a sibling of the reference, not a disguise of it.
+    mode="reforge" — signature rotation: same *effect*, fully rewritten so it
+      shares no recognizable skeleton, identity, wording or section order.
+    """
+    goal = (goal or "").strip()
+    if mode == "reforge":
+        body = (
+            "Study its architecture, register, and technique, then draft a NEW "
+            "system prompt that achieves the same effect on the same kind of "
+            "target — fully rewritten: different identity, wording, namespace, "
+            "and section order, sharing no recognizable skeleton with the "
+            "reference (signature rotation)."
+        )
+        if goal:
+            body += f" Retarget it toward this goal: {goal}."
+    else:  # emulate
+        body = (
+            "Draft a NEW system prompt that closely EMULATES it — keep the same "
+            "architecture, section structure, register, framing devices and "
+            "technique. Match its bones. This is a faithful sibling, not a "
+            "disguise: it should read as the same design, re-authored."
+        )
+        if goal:
+            body += (
+                f" Retarget it toward this goal while preserving the reference's "
+                f"structure: {goal}."
+            )
+        else:
+            body += (
+                " Preserve the reference's own subject and intent; you are "
+                "producing a clean, sharpened rendition of the same prompt."
+            )
+    return (
+        f"Below is a REFERENCE system prompt. {body} Return it in the usual "
+        f"format between the markers.\n\n"
+        f"=== REFERENCE ===\n{ref}\n=== END REFERENCE ==="
+    )
 
 
 # ───────────────────────────────────────────────────────────────────────

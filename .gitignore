@@ -11,7 +11,7 @@ dist/
 venv/
 env/
 
-# forge stores keys/config/memory/saved prompts in ~/.onyx/forge (outside the
+# forge stores keys/config/memory/saved prompts in ~/.forge (outside the
 # repo) so they can't be committed — but never commit these if they ever appear
 # inside the tree by accident:
 keys/
