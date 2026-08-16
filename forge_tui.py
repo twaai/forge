@@ -117,6 +117,23 @@ def read_os_clipboard() -> tuple[Optional[str], str]:
         return None, f"{type(e).__name__}: {e}"
 
 
+def _complete_terminal_paste(event_text: str) -> str:
+    """Recover a paste truncated by the terminal input path.
+
+    Some terminals cap a bracketed-paste event at roughly 4-5 KiB.  The OS
+    clipboard still contains the complete value, so prefer it when the event
+    is an exact prefix of that value (allowing for newline normalization).
+    """
+    clipboard_text, _ = read_os_clipboard()
+    if not clipboard_text or len(clipboard_text) <= len(event_text):
+        return event_text
+    normalized_event = event_text.replace("\r\n", "\n").replace("\r", "\n")
+    normalized_clipboard = clipboard_text.replace("\r\n", "\n").replace("\r", "\n")
+    if normalized_clipboard.startswith(normalized_event):
+        return clipboard_text
+    return event_text
+
+
 # ───────────────────────────────────────────────────────────────────────
 # paste-capable widgets — override Ctrl+V to read the OS clipboard directly,
 # so external text (keys, prompts) actually pastes regardless of terminal.
@@ -136,6 +153,12 @@ class ClipInput(Input):
 
 class ClipTextArea(TextArea):
     """TextArea whose Ctrl+V pulls the full OS clipboard block."""
+
+    async def _on_paste(self, event: events.Paste) -> None:
+        # Right-click / terminal-native paste arrives as an event and may be
+        # truncated before TextArea sees it. Recover the complete clipboard.
+        event.text = _complete_terminal_paste(event.text or "")
+        await super()._on_paste(event)
 
     def action_paste(self) -> None:
         text, _ = read_os_clipboard()
@@ -404,7 +427,7 @@ class PromptInput(Input):
             super().__init__()
 
     def _on_paste(self, event: events.Paste) -> None:
-        text = event.text or ""
+        text = _complete_terminal_paste(event.text or "")
         if len(text.splitlines()) > 1:
             event.stop()
             self.post_message(self.MultilinePaste(text))
@@ -732,6 +755,9 @@ class ForgeApp(App):
         self.spin_i = 0
         self.draft_model = ""
         self.target = cfg.get("target", "general")
+        self.quality = cfg.get("quality", "refine")
+        if self.quality not in ("fast", "refine"):
+            self.quality = "refine"
         self._learned: Optional[str] = None
         self._pending_paste: Optional[str] = None   # registered paste, held as a chip
         try:
@@ -746,6 +772,7 @@ class ForgeApp(App):
             style=self.style,
             temp=self.temp,
             target=self.target,
+            quality=self.quality,
         )
 
     @property
@@ -1018,6 +1045,13 @@ class ForgeApp(App):
                     self._info("temp takes a number 0.0–2.0, e.g. /temp 1.05")
             else:
                 self._info(f"temperature: [#FFC61A]{self.temp:.2f}[/#FFC61A]")
+        elif c == "quality":
+            if arg in ("fast", "refine"):
+                self.quality = arg
+                self._info(f"quality → [#FFC61A]{self.quality}[/#FFC61A]")
+                self._persist()
+            else:
+                self._info(f"quality: [#FFC61A]{self.quality}[/#FFC61A] — use /quality fast or /quality refine")
         elif c == "backends":
             self._show_backends()
         elif c == "backend":
@@ -1072,6 +1106,7 @@ class ForgeApp(App):
         self._info("  [#FFC61A]keys[/#FFC61A]  [dim]/ ^K[/dim]              key manager — set/see every backend's key")
         self._info("  [#FFC61A]style <name>[/#FFC61A]  [dim]/ ^T[/dim]      " + " / ".join(self.STYLES))
         self._info("  [#FFC61A]temp <0.0-2.0>[/#FFC61A]          sampling spread (0.9 default · higher = more varied regens)")
+        self._info("  [#FFC61A]quality <mode>[/#FFC61A]          refine (two-pass default) / fast (single pass)")
         self._info("  [#FFC61A]target <name>[/#FFC61A]           set the target model forge learns against (e.g. glm)")
         self._info("  [#FFC61A]note <lesson>[/#FFC61A]           teach forge something about the current target")
         self._info("  [#FFC61A]learn[/#FFC61A]                   show what forge has learned for this target")
@@ -1256,6 +1291,41 @@ class ForgeApp(App):
             break
 
         self.call_from_thread(self._live_hide)
+
+        if text and self.quality == "refine":
+            self.call_from_thread(
+                self._info,
+                "[dim #6B5C25]critic pass · reviewing and rewriting the draft…[/dim #6B5C25]",
+            )
+            refine_messages = core.build_messages(
+                self.messages + [
+                    {"role": "assistant", "content": text},
+                    {"role": "user", "content": core.refinement_instruction()},
+                ],
+                self.style,
+                learned=self._learned,
+            )
+            try:
+                improved = core.generate(
+                    client, won_model, refine_messages,
+                    temperature=min(self.temp, 0.35),
+                )
+                if not core.looks_like_refusal(improved):
+                    text = improved
+                    self.call_from_thread(
+                        self._info,
+                        "[#FFC61A]✓ critic pass complete[/#FFC61A]",
+                    )
+                else:
+                    self.call_from_thread(
+                        self._info,
+                        "[dim #6B5C25]critic declined; keeping the valid first draft[/dim #6B5C25]",
+                    )
+            except Exception as e:
+                self.call_from_thread(
+                    self._info,
+                    f"[dim #6B5C25]critic unavailable ({type(e).__name__}); keeping the first draft[/dim #6B5C25]",
+                )
 
         # learn from this run — did the current style land or get refused on this target?
         core.record_outcome(self.target, self.style, self.backend.name, won_model, bool(text))

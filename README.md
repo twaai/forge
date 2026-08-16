@@ -51,6 +51,8 @@ so one code path drives all of them.
   pulls the provider's real, current model slugs so nothing goes stale.
 - **Architecture styles** — interface, roleplay, operator, relational, persona,
   minimal, or auto — each biases how the generator frames the drafted prompt.
+- **Two-pass quality refinement** — every draft is reviewed and fully rewritten
+  by a critic pass by default; `/quality fast` restores single-pass generation.
 - **Temperature control, auto-save, persistent config** — `/temp` dials
   variation; every draft is saved automatically; your backend/model/style/target
   are remembered across sessions.
@@ -138,6 +140,7 @@ Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 /model <slug>            set a model slug directly
 /style <name>            architecture style (see below)
 /temp <0.0-2.0>          sampling spread — higher = more varied rerolls
+/quality <refine|fast>   two-pass critic+rewrite (default) or single-pass speed
 /ping                    test the current backend's key with a 1-token call
 /backend <name>          switch backend
 /backend add <name> <base_url> <model>   add any OpenAI-compatible endpoint

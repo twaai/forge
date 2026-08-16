@@ -1,4 +1,4 @@
-"""
+﻿"""
 forge_core — single source of truth for Forge.
 
 Both forge.py (one-shot CLI) and forge_tui.py (chat TUI) import from here so
@@ -658,6 +658,21 @@ def reference_instruction(ref: str, mode: str = "emulate",
         f"Below is a REFERENCE system prompt. {body} Return it in the usual "
         f"format between the markers.\n\n"
         f"=== REFERENCE ===\n{ref}\n=== END REFERENCE ==="
+    )
+
+
+def refinement_instruction() -> str:
+    """Instruction for the second-pass critic and rewrite stage."""
+    return (
+        "Perform a strict editorial review of the draft you just produced. "
+        "Check it against the original request and chosen style for intent "
+        "coverage, operational specificity, coherent architecture, priority "
+        "conflicts, ambiguity, repetition, realistic capability assumptions, "
+        "multi-turn robustness, and output-contract clarity. Then rewrite the "
+        "entire prompt to fix every material weakness you find. Preserve strong "
+        "details and the user's intent; do not merely comment on the draft or "
+        "make it longer by default. Return only the improved full prompt between "
+        "the standard Forge markers."
     )
 
 

@@ -33,3 +33,10 @@ Thumbs.db
 
 # local profile — never commit
 profile.txt
+
+# local revert/restore artifacts — dev cruft, never commit
+*.bak
+*.revert_*.diff
+*.verify_*.txt
+rollback_*.ps1
+restore_records/

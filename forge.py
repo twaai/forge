@@ -99,7 +99,8 @@ def error(msg: str) -> None:
 # generation — cascade with refusal detection (matches the TUI)
 # ───────────────────────────────────────────────────────────────────────
 
-def draft(client, cascade: list[str], user_content: str, style: str) -> tuple[str, str]:
+def draft(client, cascade: list[str], user_content: str, style: str,
+          quality: str = "refine") -> tuple[str, str]:
     """Try each model until one produces a non-refusal. Returns (text, model).
 
     `user_content` is the ready-to-send user turn — a sanitized goal for normal
@@ -118,6 +119,17 @@ def draft(client, cascade: list[str], user_content: str, style: str) -> tuple[st
             note = "refused — cascading..." if i == 0 else "also refused"
             status(f"{model.split('/')[-1]} {note}", C.SMOKE)
             continue
+        if quality == "refine":
+            refine_messages = messages + [
+                {"role": "assistant", "content": text},
+                {"role": "user", "content": core.refinement_instruction()},
+            ]
+            try:
+                improved = core.generate(client, model, refine_messages, temperature=0.35)
+                if not core.looks_like_refusal(improved):
+                    text = improved
+            except Exception:
+                pass  # a failed critic pass must not discard a valid first draft
         return text, model
     return "", ""
 
@@ -174,6 +186,8 @@ backends: {', '.join(core.BACKENDS)}
                    help="architecture style (default: auto)")
     p.add_argument("--variants", type=int, default=1,
                    help="generate N distinct prompts and print all (default: 1)")
+    p.add_argument("--quality", choices=("fast", "refine"), default="refine",
+                   help="single pass or automatic critic+rewrite (default: refine)")
     p.add_argument("--no-cascade", action="store_true",
                    help="try only the chosen model, don't fall back on refusal")
     p.add_argument("--key", default=None,
@@ -230,6 +244,7 @@ backends: {', '.join(core.BACKENDS)}
     print(paint("  backend:  ", C.SMOKE) + paint(backend.name, C.AMBER))
     print(paint("  gen:      ", C.SMOKE) + paint(primary, C.AMBER))
     print(paint("  style:    ", C.SMOKE) + paint(args.style, C.GOLD))
+    print(paint("  quality:  ", C.SMOKE) + paint(args.quality, C.GOLD))
     print(paint("  variants: ", C.SMOKE) + paint(str(args.variants), C.AMBER))
     print()
 
@@ -239,7 +254,7 @@ backends: {', '.join(core.BACKENDS)}
 
         status(f"drafting via {primary}...", C.AMBER)
         t0 = time.time()
-        raw, used = draft(client, cascade, user_content, args.style)
+        raw, used = draft(client, cascade, user_content, args.style, args.quality)
         dt = time.time() - t0
 
         if not raw:
