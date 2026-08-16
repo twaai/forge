@@ -1,0 +1,86 @@
+name: release
+
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to build & upload binaries for (e.g. v2.1.1)"
+        required: true
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    name: build ${{ matrix.label }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: windows-latest
+            label: windows-x64
+            asset: Forge-windows-x64.exe
+            bin: dist/Forge.exe
+          - os: ubuntu-latest
+            label: linux-x64
+            asset: Forge-linux-x64
+            bin: dist/Forge
+          - os: macos-latest
+            label: macos-arm64
+            asset: Forge-macos-arm64
+            bin: dist/Forge
+          - os: macos-13
+            label: macos-x64
+            asset: Forge-macos-x64
+            bin: dist/Forge
+
+    steps:
+      - name: Determine ref
+        id: ref
+        shell: bash
+        run: |
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            echo "ref=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${{ inputs.tag }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "ref=${{ github.ref }}" >> "$GITHUB_OUTPUT"
+            echo "tag=${GITHUB_REF#refs/tags/}" >> "$GITHUB_OUTPUT"
+          fi
+
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ steps.ref.outputs.ref }}
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install
+        run: |
+          python -m pip install -U pip
+          pip install -r requirements.txt
+          pip install -e .
+          pip install pyinstaller
+
+      - name: Build binary
+        run: pyinstaller --clean --noconfirm forge.spec
+
+      - name: Rename asset
+        shell: bash
+        run: |
+          mv "${{ matrix.bin }}" "dist/${{ matrix.asset }}"
+          ls -la dist/
+
+      - name: Upload to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          gh release upload "${{ steps.ref.outputs.tag }}" "dist/${{ matrix.asset }}" \
+            --repo "${{ github.repository }}" --clobber
