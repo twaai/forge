@@ -18,7 +18,7 @@ import re
 from pathlib import Path
 from typing import Iterator, Optional
 
-__version__ = "2.1.0"
+__version__ = "2.1.1"
 
 # Some machines (corporate laptops, AV / proxy stacks) MITM outbound HTTPS with
 # a private root CA that isn't in certifi's bundle, which makes the OpenAI SDK's
@@ -160,23 +160,53 @@ BACKENDS: dict[str, Backend] = {
         cascade=[
             "x-ai/grok-4.5",
             "deepseek/deepseek-v4-pro",
+            "deepseek/deepseek-v4",
             "moonshotai/kimi-k3",
+            "moonshotai/kimi-k2",
             "cognitivecomputations/dolphin-mixtral-8x22b",
             "nousresearch/hermes-4-405b",
         ],
         env_key="OPENROUTER_API_KEY",
         blurb="paid · every model · strongest generators",
         # curated permissive generators — the ones that actually draft well.
+        # grouped by vendor so the picker reads clean.
         models=[
+            # xAI
             "x-ai/grok-4.5",
-            "qwen/qwen3.7-plus",
+            "x-ai/grok-4",
+            # DeepSeek
             "deepseek/deepseek-v4-pro",
+            "deepseek/deepseek-v4",
             "deepseek/deepseek-r1",
+            "deepseek/deepseek-chat",
+            # Moonshot
             "moonshotai/kimi-k3",
+            "moonshotai/kimi-k2",
+            # Qwen
+            "qwen/qwen3.7-plus",
+            "qwen/qwen3-72b-instruct",
+            "qwen/qwen-2.5-72b-instruct",
+            # Google
+            "google/gemini-2.5-pro",
+            "google/gemini-2.5-flash",
+            "google/gemma-3-27b-it",
+            "google/gemma-2-27b-it",
+            # Anthropic
+            "anthropic/claude-opus-4.8",
+            "anthropic/claude-sonnet-5",
+            "anthropic/claude-3.7-sonnet",
+            # OpenAI
+            "openai/gpt-5",
+            "openai/gpt-4o",
+            # Meta
+            "meta-llama/llama-4-405b-instruct",
+            "meta-llama/llama-3.3-70b-instruct",
+            "meta-llama/llama-3.1-405b-instruct",
+            # Mistral
             "mistralai/mistral-large-2411",
+            # Uncensored / permissive
             "cognitivecomputations/dolphin-mixtral-8x22b",
             "nousresearch/hermes-4-405b",
-            "meta-llama/llama-3.3-70b-instruct",
         ],
     ),
     "gemini": Backend(
