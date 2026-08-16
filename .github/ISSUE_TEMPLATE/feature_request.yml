@@ -1,0 +1,30 @@
+name: Feature request
+description: Propose an addition or change to Forge's authoring / refinement flow.
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem
+      description: What's awkward or missing today, and in what workflow?
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposal
+      description: Concrete shape of the change. UI, config, backend hook, style hint, etc.
+    validations:
+      required: true
+
+  - type: textarea
+    id: scope
+    attributes:
+      label: Scope check
+      description: |
+        Forge is a prompt-authoring tool for **authorized** red-team /
+        alignment / safety-eval work (see SECURITY.md). Please confirm the
+        proposal fits that scope.
+    validations:
+      required: true

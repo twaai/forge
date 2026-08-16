@@ -1,0 +1,25 @@
+Forge
+Copyright 2026 twaai
+
+Licensed under the terms of the LICENSE file distributed with this repository.
+This program is distributed WITHOUT ANY WARRANTY; see the LICENSE for details.
+
+------------------------------------------------------------------------------
+Runtime dependencies
+------------------------------------------------------------------------------
+Forge depends on the following third-party packages at runtime:
+
+  - textual        — https://github.com/Textualize/textual        (MIT)
+  - openai         — https://github.com/openai/openai-python      (Apache-2.0)
+  - cryptography   — https://github.com/pyca/cryptography          (Apache-2.0 / BSD-3)
+  - truststore     — https://github.com/sethmlarson/truststore     (MIT)
+
+Each package is used under its own license; Forge does not redistribute their
+source. `pip install -r requirements.txt` (or `pip install -e .`) fetches
+them from PyPI.
+
+------------------------------------------------------------------------------
+Intended use
+------------------------------------------------------------------------------
+Forge is a prompt-engineering tool for AUTHORIZED red-teaming, alignment
+research, and safety evaluation only. See SECURITY.md.

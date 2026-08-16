@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Security vulnerability
+    url: https://github.com/twaai/forge/security/advisories/new
+    about: Please report security issues privately via GitHub Security Advisories. Do not open a public issue.
+  - name: Responsible-use scope
+    url: https://github.com/twaai/forge/blob/master/SECURITY.md
+    about: Questions about authorized use / target scope live in SECURITY.md.

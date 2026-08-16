@@ -1,0 +1,73 @@
+name: Bug report
+description: Something in Forge crashes, hangs, misrenders, or produces wrong output.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing a bug. **Do not paste API keys, provider system
+        prompts, or generated jailbreak drafts** into this issue — those go
+        through the private security advisory flow. Redact before submitting.
+
+  - type: input
+    id: version
+    attributes:
+      label: Forge version
+      description: "`python -c \"import forge_core;print(forge_core.__version__)\"`"
+      placeholder: "2.1.0"
+    validations:
+      required: true
+
+  - type: dropdown
+    id: os
+    attributes:
+      label: OS
+      options:
+        - Windows
+        - macOS
+        - Linux
+        - Other
+    validations:
+      required: true
+
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.11.9"
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Reproduction steps
+      description: Exact keystrokes / commands. Redact keys and prompt content.
+      placeholder: |
+        1. launch `forge`
+        2. pick backend OpenRouter, model x-ai/grok-4.5
+        3. draft goal "…"
+        4. press Ctrl+F
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected
+    validations:
+      required: true
+
+  - type: textarea
+    id: actual
+    attributes:
+      label: What happened
+      description: Include tracebacks in a fenced code block. Redact keys.
+    validations:
+      required: true
+
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant logs (optional)
+      render: shell
