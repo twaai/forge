@@ -40,3 +40,10 @@ profile.txt
 *.verify_*.txt
 rollback_*.ps1
 restore_records/
+
+# local build logs / PyInstaller work
+*_build.log
+*.log
+build/
+dist/
+*.spec.bak

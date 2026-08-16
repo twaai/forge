@@ -932,7 +932,10 @@ class ForgeApp(App):
 
     def _live_show(self, tail: str) -> None:
         self.live.add_class("streaming")
-        self.live.update(f"[#8A7534]{escape(tail)}[/#8A7534]")
+        # Render as a styled Text object, NOT a markup string — model output can
+        # contain '[' / ']' sequences that slip past escape() and crash Rich's
+        # markup parser (MarkupError) mid-stream. Text() never parses markup.
+        self.live.update(Text(tail, style="#8A7534"))
 
     def _live_hide(self) -> None:
         self.live.remove_class("streaming")
