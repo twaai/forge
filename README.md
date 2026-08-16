@@ -219,3 +219,10 @@ Everything private lives **outside the repo**, under `~/.forge/`:
 Nothing sensitive is ever stored inside the repository tree. (Upgrading from a
 pre-v2 install? Forge migrates your old `~/.onyx/forge/` home automatically on
 first run — keys, config, and learning carry over.)
+
+## Changelog
+
+### v2.1
+- **Fix:** the refine pass crashed with `AttributeError: refinement_instruction`
+  — the second-pass critic/rewrite step called a helper that had gone missing
+  from `forge_core`. Restored, so refine works again end to end.
