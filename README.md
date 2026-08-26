@@ -118,7 +118,7 @@ cd forge
 
 ## Using it
 
-### How Forge v2.5 works
+### How Forge v2.50 works
 
 ```text
 ┌──────────────────────────────────────────────┐
@@ -271,7 +271,7 @@ first run — keys, config, and learning carry over.)
 
 ## Changelog
 
-### v2.5.0
+### v2.50
 - Added optional evolutionary candidate search with configurable population,
   generations, budget, refusal classification, and deterministic fitness scoring.
 - Added Grok 4.6 routing for xAI and OpenRouter plus OrcaRouter support.
