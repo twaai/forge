@@ -576,6 +576,15 @@ compliant, in-character state for your domain.[/#C7B784]
      [#C7B784]auto-copies to your clipboard, and auto-saves to disk.[/#C7B784]
   [#FFEFBB]4.[/#FFEFBB] [#C7B784]Paste the target's refusal back in — Forge re-angles it. Or [/#C7B784][#FFC61A]^R[/#FFC61A][#C7B784] to reroll.[/#C7B784]
 
+[b #FFC61A]EVOLUTION ENGINE[/b #FFC61A]
+  [#C7B784]LOCAL: population → mutation/crossover → refusal classification →
+  fitness scoring → winner selection[/#C7B784]
+                              [#FFC61A]│ HTTPS[/#FFC61A]
+                              [#FFC61A]▼[/#FFC61A]
+                      [#FFEFBB]SELECTED MODEL API[/#FFEFBB]
+  [dim #8A7534]If no candidate clears the bar, Forge uses one bounded precision retry,
+  then the configured fallback cascade.[/dim #8A7534]
+
 [dim #8A7534]Ctrl+V pastes from your real OS clipboard everywhere (keys, prompts). A
 multi-line paste into the prompt bar registers as a [/dim #8A7534][#0A0906 on #E0A82E] ⧉ paste +N [/][dim #8A7534] chip — the block
 is held, not dumped. ⏎ emulates it · type a goal first to retarget · ^F opens
@@ -594,12 +603,16 @@ the panel · /discard drops it.[/dim #8A7534]
   [#FFC61A]/ping[/#FFC61A][#C7B784]             test the current backend's key with a 1-token call[/#C7B784]
   [#FFC61A]/models[/#FFC61A][#C7B784]           fetch the backend's LIVE model list (real slugs)[/#C7B784]
   [#FFC61A]/model <slug>[/#FFC61A][#C7B784]     set a model slug directly[/#C7B784]
+  [#FFC61A]/evolve on|off[/#FFC61A][#C7B784]    toggle evolutionary candidate search[/#C7B784]
+  [#FFC61A]/population <2-12>[/#FFC61A][#C7B784] candidates generated per generation[/#C7B784]
+  [#FFC61A]/generations <1-3>[/#FFC61A][#C7B784] mutation/selection passes[/#C7B784]
+  [#FFC61A]/budget <2-24>[/#FFC61A][#C7B784]    maximum evolutionary API calls per run[/#C7B784]
   [#FFC61A]/backend add <name> <url> <model>[/#FFC61A][#C7B784]  add any OpenAI-compatible endpoint[/#C7B784]
   [#FFC61A]/backends[/#FFC61A][#C7B784]         list backends + key status[/#C7B784]
   [#FFC61A]/save  /copy  /clear  /quit[/#FFC61A]
 
 [b #FFC61A]FORGE LEARNS[/b #FFC61A] [dim #6B5C25](per target, across sessions)[/dim #6B5C25]
-  [#FFC61A]/target <name>[/#FFC61A][#C7B784]   name the LLM you're building for (glm, qwen, claude…).[/#C7B784]
+  [#FFC61A]/target <name>[/#FFC61A][#C7B784]   name the model family you're building for.[/#C7B784]
   [#C7B784]                 Forge then logs which styles land vs get refused against it.[/#C7B784]
   [#FFC61A]/note <lesson>[/#FFC61A][#C7B784]   teach it something ("glm hates enumerated scope lists").[/#C7B784]
   [#C7B784]                 Lessons + win-rates are fed back into the generator next draft.[/#C7B784]
@@ -1610,7 +1623,7 @@ class ForgeApp(App):
 
     def _register_paste(self, text: str) -> None:
         """Hold a pasted block as a chip instead of dumping it into the view.
-        Like Claude Code's [Pasted +N lines] — the content is registered, not shown."""
+        The content is registered as one chip rather than rendered into the input."""
         self._pending_paste = text
         n_lines = len(text.splitlines())
         kib = len(text.encode("utf-8")) / 1024

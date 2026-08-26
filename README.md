@@ -118,6 +118,37 @@ cd forge
 
 ## Using it
 
+### How Forge v2.5 works
+
+```text
+┌──────────────────────────────────────────────┐
+│              LOCAL MACHINE                   │
+│                                              │
+│  ┌────────────────────────────────────────┐  │
+│  │ Forge Orchestrator                     │  │
+│  │                                        │  │
+│  │  1. Candidate prompt population        │  │
+│  │  2. Mutation and crossover engine      │  │
+│  │  3. Response/refusal classifier        │  │
+│  │  4. Requirement and quality scorer     │  │
+│  │  5. Winner selection                   │  │
+│  │  6. Standard retry and model cascade   │  │
+│  └───────────────────┬────────────────────┘  │
+│                      │                       │
+└──────────────────────┼───────────────────────┘
+                       │ HTTPS
+                       ▼
+             ┌──────────────────┐
+             │  SELECTED MODEL  │
+             │   (remote API)   │
+             └──────────────────┘
+```
+
+Evolution runs locally; only candidate-generation requests are sent to the
+selected API. Forge rejects empty/refusal candidates, scores the remainder for
+requirement coverage and structural quality, selects the strongest result, then
+uses its bounded retry and fallback cascade when no candidate clears the bar.
+
 Launch, then:
 
 | key      | action |
@@ -133,7 +164,7 @@ Launch, then:
 
 **Ctrl+V** pastes from your real OS clipboard everywhere — keys, goals, prompts
 — not just text copied inside the app. A multi-line paste into the prompt bar
-**registers as a `⧉ paste +N` chip** (like Claude Code) rather than dumping the
+**registers as a `⧉ paste +N` chip** rather than dumping the
 whole block: ⏎ emulates it, type a goal first to retarget, **^F** opens the
 panel, `/discard` drops it.
 
@@ -151,6 +182,10 @@ Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 /style <name>            architecture style (see below)
 /temp <0.0-2.0>          sampling spread — higher = more varied rerolls
 /quality <refine|fast>   two-pass critic+rewrite (default) or single-pass speed
+/evolve <on|off>        enable or disable evolutionary candidate search
+/population <2-12>      candidates generated per evolutionary generation
+/generations <1-3>      mutation/selection passes per run
+/budget <2-24>          maximum evolutionary API calls per run
 /ping                    test the current backend's key with a 1-token call
 /backend <name>          switch backend
 /backend add <name> <base_url> <model>   add any OpenAI-compatible endpoint
@@ -159,6 +194,10 @@ Type a goal and press ⏎ to draft. Type `help` for the full command list, or
 /target <name>           set the target model Forge learns against
 /note <lesson>           teach Forge something about the current target
 /learn                   show what Forge has learned for this target
+/forget                  erase learning stored for the current target
+/paste                   read and register the operating-system clipboard
+/discard                 drop the registered paste chip
+/regen                   redraft the last request
 /save  /copy  /clear  /quit
 ```
 

@@ -19,7 +19,7 @@ import uuid
 from pathlib import Path
 from typing import Iterator, Optional
 
-__version__ = "2.5.0"
+__version__ = "2.5.1"
 
 # Some machines (corporate laptops, AV / proxy stacks) MITM outbound HTTPS with
 # a private root CA that isn't in certifi's bundle, which makes the OpenAI SDK's
