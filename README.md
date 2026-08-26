@@ -53,6 +53,16 @@ so one code path drives all of them.
   minimal, or auto — each biases how the generator frames the drafted prompt.
 - **Two-pass quality refinement** — every draft is reviewed and fully rewritten
   by a critic pass by default; `/quality fast` restores single-pass generation.
+- **Evolutionary search** — an optional local orchestrator generates, mutates,
+  scores, and selects prompt candidates before the normal model cascade. Toggle
+  it from Ctrl+K; population, generations, and call budget persist locally.
+- **Stronger follow-ups** — Forge retains the latest completed draft as inert
+  editing context, applies the newest change without replaying stale refusals,
+  and performs one bounded precision retry before moving through fallbacks.
+- **Grok 4.6 support** — direct xAI and OpenRouter catalogs include Grok 4.6,
+  with provider-safe reasoning options and longer direct-request timeouts.
+- **Reliable clipboard capture** — large and multiline pastes register as a
+  context chip, while Ctrl+V and Ctrl+B read the full operating-system clipboard.
 - **Temperature control, auto-save, persistent config** — `/temp` dials
   variation; every draft is saved automatically; your backend/model/style/target
   are remembered across sessions.
@@ -221,6 +231,16 @@ pre-v2 install? Forge migrates your old `~/.onyx/forge/` home automatically on
 first run — keys, config, and learning carry over.)
 
 ## Changelog
+
+### v2.5.0
+- Added optional evolutionary candidate search with configurable population,
+  generations, budget, refusal classification, and deterministic fitness scoring.
+- Added Grok 4.6 routing for xAI and OpenRouter plus OrcaRouter support.
+- Reworked follow-up editing to preserve the current draft without strengthening
+  rejected framing across turns; added a bounded same-model recovery pass.
+- Fixed clipboard truncation for large terminal pastes and restored automatic
+  copying of completed Forge output.
+- Added the forged-sword terminal mark and packaged application icon.
 
 ### v2.1
 - **Fix:** the refine pass crashed with `AttributeError: refinement_instruction`

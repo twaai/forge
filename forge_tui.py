@@ -44,6 +44,7 @@ if str(_HERE) not in sys.path:
     sys.path.insert(0, str(_HERE))
 
 import forge_core as core
+import forge_evolution as evolution
 
 try:
     from openai import OpenAI  # noqa: F401  (imported for the clear error below)
@@ -125,13 +126,25 @@ def _complete_terminal_paste(event_text: str) -> str:
     is an exact prefix of that value (allowing for newline normalization).
     """
     clipboard_text, _ = read_os_clipboard()
-    if not clipboard_text or len(clipboard_text) <= len(event_text):
+    if not clipboard_text:
         return event_text
     normalized_event = event_text.replace("\r\n", "\n").replace("\r", "\n")
     normalized_clipboard = clipboard_text.replace("\r\n", "\n").replace("\r", "\n")
-    if normalized_clipboard.startswith(normalized_event):
+    # Identical → nothing was truncated; keep the event as-is.
+    if normalized_clipboard == normalized_event:
+        return event_text
+    # A paste event mirrors the clipboard. If the clipboard holds at least as much
+    # as the (terminal-truncated) event, it is the authoritative full content —
+    # prefer it. This avoids a fragile exact-prefix match that line-ending or
+    # control-char normalization can silently break.
+    if len(normalized_clipboard) >= len(normalized_event):
         return clipboard_text
     return event_text
+
+
+# A single-line paste longer than this is held as a ⧉ chip rather than dumped
+# into the one-line prompt bar (which the terminal also caps at ~5 KiB).
+PASTE_REGISTER_MIN = 1000
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -194,13 +207,18 @@ def _lerp(a: tuple, b: tuple, t: float) -> tuple:
 # a little forged blade, point up. floats to the right of the wordmark,
 # taller than it so it pokes above and below — the "floating" look.
 FORGE_SWORD = [
-    r"  /\  ",
-    r"  ||  ",
-    r"  ||  ",
-    r"  ||  ",
-    r"<=||=>",
-    r"  ||  ",
-    r"  \/  ",
+    r"       /\       ",
+    r"      /  \      ",
+    r"     / /\ \     ",
+    r"     | || |     ",
+    r"     | || |     ",
+    r"  ___|_||_|___  ",
+    r" /___  /\  ___\ ",
+    r"     \/  \/     ",
+    r"      |  |      ",
+    r"      |  |      ",
+    r"     /____\     ",
+    r"       \/       ",
 ]
 
 
@@ -281,7 +299,7 @@ class ModelPicker(ModalScreen[Optional[dict]]):
 
     def compose(self) -> ComposeResult:
         with Vertical(id="picker"):
-            yield Static("switch model  ·  backend × model", id="picker-title")
+            yield Static("switch provider & model  ·  provider × model", id="picker-title")
             yield ClipInput(placeholder="type to filter…", id="filter")
             yield OptionList(id="opts")
             yield Static("↑↓ move   ⏎ select   esc cancel", id="picker-hint")
@@ -362,15 +380,16 @@ class KeyManager(ModalScreen[Optional[str]]):
     #km-hint { color: #6B5C25; height: 1; }
     """
 
-    def __init__(self) -> None:
+    def __init__(self, evolution_enabled: bool = True) -> None:
         super().__init__()
         self.names = [n for n, be in core.BACKENDS.items() if not be.local]
+        self.evolution_enabled = evolution_enabled
         self.target: Optional[str] = None
         self.changed: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         with Vertical(id="keybox"):
-            yield Static("api keys  ·  select a backend, paste, enter", id="km-title")
+            yield Static("keys & generation mode  ·  select an option", id="km-title")
             yield OptionList(id="km-opts")
             yield ClipInput(placeholder="paste key here…", id="km-entry", password=True)
             yield Static("⏎ on a backend to enter its key   ·   esc close", id="km-hint")
@@ -383,6 +402,10 @@ class KeyManager(ModalScreen[Optional[str]]):
 
     def _rebuild(self) -> None:
         self.opts.clear_options()
+        evo_state = "[#6FCF6F]ON[/#6FCF6F]" if self.evolution_enabled else "[#8A7534]OFF[/#8A7534]"
+        self.opts.add_option(Option(Text.from_markup(
+            f"[#FFC61A]⚙ evolutionary search[/#FFC61A] {evo_state:<18} [dim]enter to toggle[/dim]"
+        ), id="__evolution__"))
         for name in self.names:
             be = core.get_backend(name)
             keyed = be.has_key()
@@ -392,6 +415,9 @@ class KeyManager(ModalScreen[Optional[str]]):
             self.opts.add_option(Option(Text.from_markup(row), id=name))
 
     def on_option_list_option_selected(self, event: OptionList.OptionSelected) -> None:
+        if event.option.id == "__evolution__":
+            self.dismiss("evolution:toggle")
+            return
         self.target = event.option.id
         self.entry.add_class("active")
         self.entry.placeholder = f"paste {self.target} key, enter to save"
@@ -426,13 +452,20 @@ class PromptInput(Input):
             self.text = text
             super().__init__()
 
-    def _on_paste(self, event: events.Paste) -> None:
-        text = _complete_terminal_paste(event.text or "")
-        if len(text.splitlines()) > 1:
-            event.stop()
+    def _register_or_insert(self, text: str) -> None:
+        # A multi-line block, or any large blob, is held as a ⧉ chip instead of
+        # being dumped into the single-line bar; small single-line pastes insert.
+        if "\n" in text or len(text) > PASTE_REGISTER_MIN:
             self.post_message(self.MultilinePaste(text))
-            return
-        super()._on_paste(event)
+        else:
+            self.insert_text_at_cursor(text)
+
+    def _on_paste(self, event: events.Paste) -> None:
+        # Terminals cap bracketed-paste events at ~5 KiB, so always prefer the
+        # full OS clipboard, then decide chip-vs-insert on the complete text.
+        text = _complete_terminal_paste(event.text or "")
+        event.stop()
+        self._register_or_insert(text)
 
     def action_paste(self) -> None:
         # Ctrl+V: pull from the real OS clipboard (Textual's own is app-internal)
@@ -440,10 +473,7 @@ class PromptInput(Input):
         if not text:
             self.app.bell()
             return
-        if len(text.splitlines()) > 1:
-            self.post_message(self.MultilinePaste(text))
-            return
-        self.insert_text_at_cursor(text)
+        self._register_or_insert(text)
 
 
 # ───────────────────────────────────────────────────────────────────────
@@ -733,6 +763,8 @@ class ForgeApp(App):
         Binding("ctrl+r", "regen", "regen", show=False, priority=True),
         Binding("ctrl+s", "save_last", "save prompt", show=False, priority=True),
         Binding("ctrl+y", "copy_last", "copy prompt", show=False, priority=True),
+        Binding("ctrl+v", "paste_clipboard", "paste", show=False, priority=True),
+        Binding("ctrl+b", "paste_clipboard", "paste", show=False, priority=True),  # backup if the terminal eats ctrl+v
     ]
 
     STYLES = core.STYLE_NAMES
@@ -758,6 +790,10 @@ class ForgeApp(App):
         self.quality = cfg.get("quality", "refine")
         if self.quality not in ("fast", "refine"):
             self.quality = "refine"
+        self.evolution_enabled = bool(cfg.get("evolution_enabled", True))
+        self.evolution_population = max(2, min(12, int(cfg.get("evolution_population", 6))))
+        self.evolution_generations = max(1, min(3, int(cfg.get("evolution_generations", 2))))
+        self.evolution_budget = max(2, min(24, int(cfg.get("evolution_budget", 12))))
         self._learned: Optional[str] = None
         self._pending_paste: Optional[str] = None   # registered paste, held as a chip
         try:
@@ -773,6 +809,10 @@ class ForgeApp(App):
             temp=self.temp,
             target=self.target,
             quality=self.quality,
+            evolution_enabled=self.evolution_enabled,
+            evolution_population=self.evolution_population,
+            evolution_generations=self.evolution_generations,
+            evolution_budget=self.evolution_budget,
         )
 
     @property
@@ -782,7 +822,7 @@ class ForgeApp(App):
     def compose(self) -> ComposeResult:
         with Vertical(id="term"):
             with Horizontal(id="header"):
-                yield Static("◆ FORGE", id="brand")
+                yield Static("⚔  FORGE", id="brand")
                 yield Static("", id="status")
             yield RichLog(id="out", wrap=True, markup=True, auto_scroll=True)
             yield Static("", id="live")
@@ -796,8 +836,8 @@ class ForgeApp(App):
         def k(key: str, label: str) -> str:
             return f"[#0A0906 on #4A3D1A] {key} [/][#6B5C25]{label}[/#6B5C25]"
         return "  ".join([
-            k("F1", "guide"), k("^P", "model"), k("^K", "keys"), k("^F", "reforge"),
-            k("^T", "style"), k("^R", "regen"), k("^Y", "copy"),
+            k("F1", "guide"), k("^P", "provider"), k("^K", "keys"), k("^F", "reforge"),
+            k("^T", "style"), k("^R", "regen"), k("^V", "paste"), k("^Y", "copy"),
             k("^C", "clear"), k("^Q", "quit"),
         ])
 
@@ -921,6 +961,23 @@ class ForgeApp(App):
         else:
             self.out.write("")
             self.out.write(f"[#C7B784]{escape(text)}[/#C7B784]")
+            # Providers occasionally omit Forge's marker wrapper. The visible
+            # response is still the completed artifact, so retain, save, and
+            # copy it exactly like a marker-delimited result.
+            artifact = text.strip()
+            if artifact:
+                self.last_prompt = artifact
+                saved = self._autosave(artifact)
+                ok, info = copy_to_clipboard(artifact)
+                clip = (
+                    f"[#6FCF6F]✓ copied[/#6FCF6F] [dim #6B5C25]({info})[/dim #6B5C25]"
+                    if ok else
+                    f"[#FF9A1F]clipboard unavailable[/#FF9A1F] [dim #6B5C25]({info})[/dim #6B5C25]"
+                )
+                self.out.write(
+                    f"  {clip}  [dim #4A3D1A]·[/dim #4A3D1A]  "
+                    f"[dim #6B5C25]saved → {saved.name}[/dim #6B5C25]"
+                )
 
     def _info(self, text: str) -> None:
         self.out.write(f"[dim #6B5C25]{text}[/dim #6B5C25]")
@@ -978,10 +1035,9 @@ class ForgeApp(App):
     def _submit_ask(self, val: str) -> None:
         self._emit_user(val)
         self.last_ask = val
-        sanitized = core.sanitize_user_ask(val)
-        if sanitized != val:
-            self._info("[dim #6B5C25]· sanitized self-referential vocab before send (silent)[/dim #6B5C25]")
-        self.messages.append({"role": "user", "content": sanitized})
+        framed = core.frame_operator_request(val, self.target, self.style)
+        self._info("[dim #6B5C25]· verbatim query preserved · execution framing applied[/dim #6B5C25]")
+        self.messages.append({"role": "user", "content": framed})
         self._learned = core.learned_context(self.target)
         if self._learned:
             self._info(f"[dim #6B5C25]· applying learned context for target '{self.target}'[/dim #6B5C25]")
@@ -1012,6 +1068,8 @@ class ForgeApp(App):
                 self._info("[dim #6B5C25]· registered paste discarded[/dim #6B5C25]")
             else:
                 self._info("nothing registered to discard")
+        elif c in ("paste", "clip", "clipboard"):
+            self._paste_from_clipboard()
         elif c in ("help", "?"):
             self._show_help()
         elif c == "clear":
@@ -1055,9 +1113,38 @@ class ForgeApp(App):
                 self._persist()
             else:
                 self._info(f"quality: [#FFC61A]{self.quality}[/#FFC61A] — use /quality fast or /quality refine")
-        elif c == "backends":
+        elif c in ("evolve", "evolution"):
+            if arg in ("on", "off"):
+                self.evolution_enabled = arg == "on"
+                self._persist()
+            elif arg:
+                self._err("usage: /evolve on|off")
+            state = "on" if self.evolution_enabled else "off"
+            self._info(f"evolution → [#FFC61A]{state}[/#FFC61A] · population {self.evolution_population} · generations {self.evolution_generations} · budget {self.evolution_budget}")
+        elif c == "population":
+            try:
+                self.evolution_population = max(2, min(12, int(arg)))
+                self._persist()
+                self._info(f"evolution population → [#FFC61A]{self.evolution_population}[/#FFC61A]")
+            except ValueError:
+                self._err("usage: /population <2-12>")
+        elif c == "generations":
+            try:
+                self.evolution_generations = max(1, min(3, int(arg)))
+                self._persist()
+                self._info(f"evolution generations → [#FFC61A]{self.evolution_generations}[/#FFC61A]")
+            except ValueError:
+                self._err("usage: /generations <1-3>")
+        elif c == "budget":
+            try:
+                self.evolution_budget = max(2, min(24, int(arg)))
+                self._persist()
+                self._info(f"evolution API-call budget → [#FFC61A]{self.evolution_budget}[/#FFC61A]")
+            except ValueError:
+                self._err("usage: /budget <2-24>")
+        elif c in ("backends", "providers"):
             self._show_backends()
-        elif c == "backend":
+        elif c in ("backend", "provider"):
             self._cmd_backend(arg)
         elif c == "ping":
             self.ping_backend()
@@ -1110,6 +1197,10 @@ class ForgeApp(App):
         self._info("  [#FFC61A]style <name>[/#FFC61A]  [dim]/ ^T[/dim]      " + " / ".join(self.STYLES))
         self._info("  [#FFC61A]temp <0.0-2.0>[/#FFC61A]          sampling spread (0.9 default · higher = more varied regens)")
         self._info("  [#FFC61A]quality <mode>[/#FFC61A]          refine (two-pass default) / fast (single pass)")
+        self._info("  [#FFC61A]evolve on|off[/#FFC61A]           evolutionary candidate search")
+        self._info("  [#FFC61A]population <2-12>[/#FFC61A]       candidates per generation")
+        self._info("  [#FFC61A]generations <1-3>[/#FFC61A]       evolutionary passes")
+        self._info("  [#FFC61A]budget <2-24>[/#FFC61A]            maximum API calls per run")
         self._info("  [#FFC61A]target <name>[/#FFC61A]           set the target model forge learns against (e.g. glm)")
         self._info("  [#FFC61A]note <lesson>[/#FFC61A]           teach forge something about the current target")
         self._info("  [#FFC61A]learn[/#FFC61A]                   show what forge has learned for this target")
@@ -1252,18 +1343,60 @@ class ForgeApp(App):
 
     # ── worker (streaming + cascade) ──────────────────────────────
 
+    def _run_evolution(self, messages: list[dict]) -> Optional[str]:
+        cfg = evolution.EvolutionConfig(
+            enabled=self.evolution_enabled,
+            population=self.evolution_population,
+            generations=self.evolution_generations,
+            max_calls=self.evolution_budget,
+            workers=3,
+        )
+
+        def generate_candidate(candidate_messages: list[dict], temperature: float) -> str:
+            candidate_client = core.make_client(self.backend, self.key)
+            return core.generate(
+                candidate_client,
+                self.model,
+                candidate_messages,
+                temperature=temperature,
+            )
+
+        def progress(message: str) -> None:
+            self.call_from_thread(self._info, f"[dim #6B5C25]evolution · {message}[/dim #6B5C25]")
+
+        result = evolution.evolve(
+            generate=generate_candidate,
+            base_messages=messages,
+            query=self.last_ask or "",
+            refusal_fn=core.looks_like_refusal,
+            config=cfg,
+            progress=progress,
+        )
+        if not result.winner:
+            self.call_from_thread(self._info, "[#FF9A1F]evolution produced no valid candidate · using standard cascade[/#FF9A1F]")
+            return None
+        self.call_from_thread(
+            self._info,
+            f"[#FFC61A]evolution winner · score {result.winner.score:.1f} · "
+            f"generation {result.winner.generation} · {result.calls} calls[/#FFC61A]",
+        )
+        return result.winner.text
+
     @work(thread=True, exclusive=True)
     def run_forge(self) -> None:
-        msgs = core.build_messages(self.messages, self.style, learned=self._learned)
+        prepared = core.prepare_followup_conversation(self.messages)
+        msgs = core.build_messages(prepared, self.style, learned=self._learned)
         client = core.make_client(self.backend, self.key)
 
         cascade = [self.model] + [m for m in self.backend.cascade if m != self.model]
 
         text = ""
         won_model = self.model
-        for i, m in enumerate(cascade):
+        if self.evolution_enabled:
+            text = self._run_evolution(msgs) or ""
+        for i, m in enumerate(cascade if not text else []):
             self.draft_model = m.split("/")[-1]   # header spinner follows the cascade
-            attempt, err = self._stream_one(client, m)
+            attempt, err = self._stream_one(client, m, msgs)
 
             if err:
                 self.call_from_thread(
@@ -1273,6 +1406,32 @@ class ForgeApp(App):
                 continue
 
             if core.looks_like_refusal(attempt):
+                self.call_from_thread(
+                    self._info,
+                    f"[dim #6B5C25]{m.split('/')[-1]} declined · precision retry…[/dim #6B5C25]",
+                )
+                retry_messages = core.refusal_recovery_messages(msgs, attempt)
+                try:
+                    retry = core.generate(
+                        client,
+                        m,
+                        retry_messages,
+                        temperature=min(self.temp, 0.45),
+                    )
+                except Exception as recovery_error:
+                    retry = ""
+                    self.call_from_thread(
+                        self._info,
+                        f"[dim #6B5C25]precision retry unavailable ({type(recovery_error).__name__})[/dim #6B5C25]",
+                    )
+                if retry and not core.looks_like_refusal(retry):
+                    text = retry
+                    won_model = m
+                    self.call_from_thread(
+                        self._info,
+                        f"[#FFC61A]✓ recovered via {m.split('/')[-1]} precision pass[/#FFC61A]",
+                    )
+                    break
                 if i == 0:
                     self.call_from_thread(
                         self._info,
@@ -1346,12 +1505,12 @@ class ForgeApp(App):
         self.call_from_thread(self._emit_forge, text)
         self.call_from_thread(self._done)
 
-    def _stream_one(self, client, model: str) -> tuple[str, Optional[str]]:
+    def _stream_one(self, client, model: str, messages: list[dict]) -> tuple[str, Optional[str]]:
         """Stream one model, updating the live tail. Returns (text, error)."""
         buf: list[str] = []
         last_paint = 0.0
         try:
-            for piece in core.generate_stream(client, model, core.build_messages(self.messages, self.style, learned=self._learned), temperature=self.temp):
+            for piece in core.generate_stream(client, model, messages, temperature=self.temp):
                 buf.append(piece)
                 now = time.monotonic()
                 if now - last_paint >= 0.08:
@@ -1363,7 +1522,7 @@ class ForgeApp(App):
             # some backends/models reject stream=True — fall back to non-stream once
             if "stream" in str(e).lower():
                 try:
-                    txt = core.generate(client, model, core.build_messages(self.messages, self.style, learned=self._learned), temperature=self.temp)
+                    txt = core.generate(client, model, messages, temperature=self.temp)
                     return txt, None
                 except Exception as e2:
                     return "", f"{type(e2).__name__}: {str(e2)[:250]}"
@@ -1425,6 +1584,12 @@ class ForgeApp(App):
 
     def action_open_keys(self) -> None:
         def done(changed: Optional[str]) -> None:
+            if changed == "evolution:toggle":
+                self.evolution_enabled = not self.evolution_enabled
+                self._persist()
+                state = "on" if self.evolution_enabled else "off"
+                self._info(f"[#FFC61A]evolutionary search → {state}[/#FFC61A]")
+                return
             # reload the current backend's key in case it was just set
             self.key = self.backend.load_key()
             if changed:
@@ -1432,7 +1597,7 @@ class ForgeApp(App):
                 if changed == self.backend.name and self.key:
                     self._info("[#FFC61A]current backend now keyed · ready[/#FFC61A]")
             self._redraw_bar()
-        self.push_screen(KeyManager(), done)
+        self.push_screen(KeyManager(self.evolution_enabled), done)
 
     def action_open_guide(self) -> None:
         if not isinstance(self.screen, GuideScreen):
@@ -1448,14 +1613,36 @@ class ForgeApp(App):
         Like Claude Code's [Pasted +N lines] — the content is registered, not shown."""
         self._pending_paste = text
         n_lines = len(text.splitlines())
-        preview = text.strip().splitlines()[0][:48] if text.strip() else ""
+        kib = len(text.encode("utf-8")) / 1024
+        preview = text.strip().splitlines()[0][:72] if text.strip() else ""
         self._info(
             f"[#0A0906 on #E0A82E] ⧉ pasted text registered [/] "
-            f"[dim #6B5C25]+{n_lines} lines · {len(text):,} chars[/dim #6B5C25]"
+            f"[dim #6B5C25]{n_lines} lines · {len(text):,} chars · {kib:.1f} KiB[/dim #6B5C25]"
             + (f"  [dim #4A3D1A]“{escape(preview)}…”[/dim #4A3D1A]" if preview else "")
         )
         self._info("[dim #8A7534]  ⏎ emulate  ·  type a goal then ⏎ to retarget  ·  ^F panel (emulate/rotate/send)  ·  /discard[/dim #8A7534]")
         self._redraw_bar()
+
+    def action_paste_clipboard(self) -> None:
+        self._paste_from_clipboard()
+
+    def _paste_from_clipboard(self) -> None:
+        """Pull the OS clipboard directly and register it. The reliable path when
+        the terminal never forwards a bracketed-paste event to a TUI — reads the
+        full clipboard regardless of paste-event support."""
+        text, tool = read_os_clipboard()
+        if not text:
+            self._err("clipboard is empty — copy something first (or no clipboard tool found)")
+            return
+        text = text.replace("\r\n", "\n").replace("\r", "\n")
+        if "\n" in text or len(text) > PASTE_REGISTER_MIN:
+            self.query_one("#in", Input).value = ""
+            self._register_paste(text)
+        else:
+            inp = self.query_one("#in", Input)
+            inp.value = inp.value + text
+            inp.cursor_position = len(inp.value)
+            self._info(f"[dim #6B5C25]· pasted {len(text)} chars into the prompt[/dim #6B5C25]")
 
     def action_open_reforge(self, prefill: str = "") -> None:
         # a registered paste feeds the panel; opening it consumes the chip

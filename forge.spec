@@ -7,7 +7,7 @@ from PyInstaller.utils.hooks import collect_all
 
 datas = [('assets/templates.dat', 'assets')]
 binaries = []
-hiddenimports = ['forge_core']
+hiddenimports = ['forge_core', 'forge_evolution']
 
 # textual (UI), truststore (OS cert store for TLS), cryptography (profile
 # decrypt) need their data/binaries collected so the frozen build is complete.
@@ -52,4 +52,5 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
+    icon='forge.ico',
 )

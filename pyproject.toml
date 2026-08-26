@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forge-prompt"
-version = "2.1.1"
+version = "2.5.0"
 description = "Chat-mode forge for persona-layer system prompts, with a live model picker, per-target learning, and any OpenAI-compatible backend."
 readme = "README.md"
 requires-python = ">=3.9"
@@ -19,4 +19,4 @@ forge = "forge_tui:main"
 forge-cli = "forge:main"
 
 [tool.setuptools]
-py-modules = ["forge", "forge_core", "forge_tui"]
+py-modules = ["forge", "forge_core", "forge_evolution", "forge_tui"]
