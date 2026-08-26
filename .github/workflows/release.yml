@@ -34,7 +34,7 @@ jobs:
             label: macos-arm64
             asset: Forge-macos-arm64
             bin: dist/Forge
-          - os: macos-13
+          - os: macos-15-intel
             label: macos-x64
             asset: Forge-macos-x64
             bin: dist/Forge
