@@ -3,6 +3,7 @@ import sys
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
+# Dest must stay forge3/web — frozen web_main looks under _MEIPASS/forge3/web.
 datas = [("forge3/web", "forge3/web")]
 binaries = []
 hiddenimports = collect_submodules("forge3.core") + [

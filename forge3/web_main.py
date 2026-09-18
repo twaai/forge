@@ -16,10 +16,34 @@ sys.path.insert(0, str(HERE))
 from forge3.web_api import Api  # noqa: E402
 
 
+def resolve_shell(
+    here: Path | None = None,
+    meipass: str | Path | None = None,
+) -> Path:
+    """Locate index.html for source runs and the one-file extract.
+
+    PyInstaller drops web_main.py at _MEIPASS and packs datas at forge3/web.
+    Source keeps the shell next to this file at web/index.html.
+    """
+    here = Path(here) if here is not None else HERE
+    if meipass is None and getattr(sys, "frozen", False):
+        meipass = getattr(sys, "_MEIPASS", None)
+    candidates: list[Path] = []
+    if meipass:
+        root = Path(meipass)
+        candidates.append(root / "forge3" / "web" / "index.html")
+        candidates.append(root / "web" / "index.html")
+    candidates.append(here / "web" / "index.html")
+    candidates.append(here / "forge3" / "web" / "index.html")
+    for html in candidates:
+        if html.is_file():
+            return html
+    tried = " ; ".join(str(path) for path in candidates)
+    raise FileNotFoundError(f"FORGE 3.0 shell not found. Tried: {tried}")
+
+
 def main() -> int:
-    html = HERE / "web" / "index.html"
-    if not html.is_file():
-        raise FileNotFoundError(f"FORGE 3.0 shell not found: {html}")
+    html = resolve_shell()
     dev = "--dev" in sys.argv or os.getenv("FORGE3_DEBUG", "").lower() in {
         "1",
         "true",

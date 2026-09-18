@@ -15,6 +15,22 @@ from forge3.paths import drawer_label, load_overlay, save_overlay
 from forge3.forge_session import Forge3Session
 from forge3.strength import StrengthSource, extract_block, infer_target, sanitize_goal
 from forge3.web_api import Api
+from forge3.web_main import resolve_shell
+
+
+def test_frozen_shell_uses_meipass_forge3_web(tmp_path) -> None:
+    meipass = tmp_path / "_MEI000027082"
+    packed = meipass / "forge3" / "web" / "index.html"
+    packed.parent.mkdir(parents=True)
+    packed.write_text("<!doctype html><title>forge</title>\n", encoding="utf-8")
+    found = resolve_shell(here=meipass, meipass=meipass)
+    assert found == packed
+
+
+def test_source_shell_uses_package_web() -> None:
+    found = resolve_shell(here=ROOT)
+    assert found == ROOT / "web" / "index.html"
+    assert found.is_file()
 
 
 def test_forge_prompt_assets_are_encoded_at_rest() -> None:
