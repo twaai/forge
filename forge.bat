@@ -72,7 +72,7 @@ curl.exe -fL --retry 3 "%RELEASE%/Forge-3.0-windows-x64.exe" -o "%DOWNLOAD%"
 if errorlevel 1 goto :python_missing
 curl.exe -fL --retry 3 "%RELEASE%/SHA256SUMS.txt" -o "%SUMS%"
 if errorlevel 1 goto :python_missing
-powershell.exe -NoProfile -ExecutionPolicy Bypass -Command ^
+"%SystemRoot%\System32\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -ExecutionPolicy Bypass -Command ^
   "$line=(Select-String -LiteralPath '%SUMS%' -Pattern 'Forge-3.0-windows-x64.exe').Line; if(-not $line){exit 1}; $expected=($line -split '\s+')[0].ToLowerInvariant(); $actual=(Get-FileHash -Algorithm SHA256 -LiteralPath '%DOWNLOAD%').Hash.ToLowerInvariant(); if($actual -ne $expected){exit 2}"
 if errorlevel 1 goto :checksum_failed
 move /Y "%DOWNLOAD%" "%PORTABLE_EXE%" >nul
