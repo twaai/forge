@@ -1,0 +1,47 @@
+"""Desktop window for FORGE 3.0."""
+
+from __future__ import annotations
+
+import os
+import sys
+from pathlib import Path
+
+import webview
+
+HERE = Path(__file__).resolve().parent
+ROOT = HERE.parent
+sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(HERE))
+
+from forge3.web_api import Api  # noqa: E402
+
+
+def main() -> int:
+    html = HERE / "web" / "index.html"
+    if not html.is_file():
+        raise FileNotFoundError(f"FORGE 3.0 shell not found: {html}")
+    dev = "--dev" in sys.argv or os.getenv("FORGE3_DEBUG", "").lower() in {
+        "1",
+        "true",
+        "yes",
+    }
+    api = Api()
+    window = webview.create_window(
+        title="FORGE 3.0",
+        url=str(html),
+        js_api=api,
+        width=1180,
+        height=780,
+        fullscreen=False,
+        min_size=(860, 560),
+        background_color="#100E08",
+        text_select=True,
+        confirm_close=False,
+    )
+    api._bind_window(window)
+    webview.start(debug=dev)
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

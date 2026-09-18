@@ -1,0 +1,6 @@
+# Normalize line endings across platforms.
+* text=auto eol=lf
+
+# Windows batch must stay CRLF; POSIX shell must stay LF or it won't run.
+*.bat text eol=crlf
+*.sh  text eol=lf

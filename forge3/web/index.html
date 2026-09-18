@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FORGE 3.0</title>
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+<svg width="0" height="0" aria-hidden="true" class="defs">
+  <defs>
+    <linearGradient id="forgeSweep" x1="100" y1="18" x2="100" y2="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffeeb0"></stop>
+      <stop offset=".45" stop-color="#ffc61a"></stop>
+      <stop offset="1" stop-color="#b05e12"></stop>
+    </linearGradient>
+    <g id="forgeSword">
+      <path fill="url(#forgeSweep)" d="M100 18 116 45 112 119 88 119 84 45Z"></path>
+      <path fill="url(#forgeSweep)" d="M45 116 88 108 94 126 67 137 50 130Z"></path>
+      <path fill="url(#forgeSweep)" d="M155 116 112 108 106 126 133 137 150 130Z"></path>
+      <rect x="93" y="124" width="14" height="42" rx="3" fill="url(#forgeSweep)"></rect>
+      <path fill="url(#forgeSweep)" d="M100 164 114 178 100 190 86 178Z"></path>
+      <path fill="#783c0c" fill-opacity=".55" d="M100 27 104 48 103 112 97 112 96 48Z"></path>
+    </g>
+  </defs>
+</svg>
+
+<div class="app" id="app">
+
+  <aside class="rail" id="rail">
+    <div class="railhead">
+      <div class="brand">
+        <svg class="glyph" viewBox="0 0 200 200" aria-hidden="true"><use href="#forgeSword"></use></svg>
+        <span class="marks"><b>FORGE</b><span>3.0</span></span>
+      </div>
+
+      <button class="newchat" id="newChat" type="button">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"><path d="M7 2.5v9M2.5 7h9"></path></svg>
+        <span>New chat</span>
+        <kbd>Ctrl N</kbd>
+      </button>
+
+      <div class="searchwrap">
+        <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.2"></circle><path d="M9.2 9.2 12 12" stroke-linecap="round"></path></svg>
+        <input class="search" id="chatSearch" type="search" placeholder="Search saved chats" autocomplete="off" aria-label="Search saved chats">
+      </div>
+    </div>
+
+    <div class="chats" id="chats" aria-label="Saved chats"></div>
+
+    <div class="railfoot">
+      <span class="lock" id="lockChip">
+        <svg width="9" height="11" viewBox="0 0 10 12" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="5" width="8" height="6" rx="1.4"></rect><path d="M3 5V3.4A2 2 0 0 1 7 3.4V5" id="lockShackle"></path></svg>
+        <span id="lockText">vault</span>
+      </span>
+      <span class="drawer" id="drawerPath" title="Forge 3.0 keeps its own chat drawer">~/.forge-3</span>
+    </div>
+  </aside>
+
+  <main class="stage" id="stage">
+
+    <header class="top">
+      <button class="icobtn" id="railBtn" type="button" aria-label="Toggle sidebar" title="Toggle sidebar">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1.6" y="2.6" width="12.8" height="10.8" rx="2"></rect><path d="M6.2 2.6v10.8"></path></svg>
+      </button>
+
+      <button class="modelchip" id="modelChip" type="button" aria-haspopup="listbox" aria-expanded="false">
+        <span class="provider" id="modelProvider">backend</span>
+        <span class="name" id="modelName">model</span>
+        <span class="caret" aria-hidden="true">&#9662;</span>
+      </button>
+
+      <span class="titlebar" id="titleBar"></span>
+
+      <span class="alert" id="alertChip" hidden>
+        <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"><path d="M6 3v3.4M6 8.6v.1"></path><circle cx="6" cy="6" r="4.6"></circle></svg>
+        <span id="alertText"></span>
+      </span>
+
+      <button class="icobtn" id="settingsBtn" type="button" aria-label="Settings" title="Settings (Ctrl ,)">
+        <svg width="15" height="15" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4"><circle cx="8" cy="8" r="2.3"></circle><path d="M8 1.6v1.7M8 12.7v1.7M14.4 8h-1.7M3.3 8H1.6M12.53 3.47l-1.2 1.2M4.67 11.33l-1.2 1.2M12.53 12.53l-1.2-1.2M4.67 4.67l-1.2-1.2" stroke-linecap="round"></path></svg>
+      </button>
+
+      <span class="wingroup">
+        <button class="win" id="winMin" type="button" aria-label="Minimize" title="Minimize">
+          <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.3"><path d="M2.5 6h7"></path></svg>
+        </button>
+        <button class="win" id="winMax" type="button" aria-label="Maximize" title="Maximize">
+          <svg width="11" height="11" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.3"><rect x="2.6" y="2.6" width="6.8" height="6.8" rx="1.2"></rect></svg>
+        </button>
+        <button class="win close" id="winClose" type="button" aria-label="Close" title="Close">
+          <svg width="11" height="11" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3.2 3.2l5.6 5.6M8.8 3.2l-5.6 5.6"></path></svg>
+        </button>
+      </span>
+    </header>
+
+    <div class="thread" id="thread" aria-live="polite" aria-label="Conversation">
+      <div class="turns" id="turns"></div>
+      <div class="empty" id="empty" hidden>
+        <svg class="glyph" viewBox="0 0 200 200" aria-hidden="true"><use href="#forgeSword"></use></svg>
+        <h1>What should Forge draft?</h1>
+        <p>Chat to compile, review, or revise a prompt. Forge will not leave that job.</p>
+      </div>
+    </div>
+
+    <button class="jump" id="jumpBtn" type="button" hidden>
+      <svg width="10" height="10" viewBox="0 0 12 12" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round"><path d="M6 2v8M2.8 6.8 6 10l3.2-3.2"></path></svg>
+      Jump to latest
+    </button>
+
+    <div class="composerwrap">
+      <form class="composer" id="composer">
+        <textarea id="input" rows="1" placeholder="Compile, review, or revise a prompt" autocomplete="off" aria-label="Compile, review, or revise a prompt"></textarea>
+        <div class="comfoot">
+          <span class="hints">
+            <span><kbd>Enter</kbd> send</span>
+            <span><kbd>Shift Enter</kbd> newline</span>
+            <span><kbd>&#8593;</kbd> reuse last</span>
+          </span>
+          <button class="send" id="sendBtn" type="submit">
+            <span id="sendLabel">Send</span>
+            <svg id="sendIcon" width="12" height="12" viewBox="0 0 13 13" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M6.5 10.5v-8M3 6l3.5-3.5L10 6"></path></svg>
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <div class="toast" id="toast"></div>
+  </main>
+</div>
+
+
+<div class="modal sheetwrap" id="settings" hidden>
+  <div class="sheet" role="dialog" aria-modal="true" aria-labelledby="setTitle">
+
+    <header class="sheethead">
+      <h2 id="setTitle">Settings</h2>
+      <span class="sheetsub" id="setSub">prompt workshop &middot; chat body, prompt mouth</span>
+      <button class="icobtn" id="setClose" type="button" aria-label="Close settings" title="Close">
+        <svg width="13" height="13" viewBox="0 0 12 12" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="M3.2 3.2l5.6 5.6M8.8 3.2l-5.6 5.6"></path></svg>
+      </button>
+    </header>
+
+    <div class="sheetmain">
+      <nav class="tabs" role="tablist" aria-label="Settings sections">
+        <button class="tab on" id="tabModels" type="button" role="tab" data-pane="paneModels" aria-selected="true" aria-controls="paneModels">Models</button>
+        <button class="tab" id="tabKeys" type="button" role="tab" data-pane="paneKeys" aria-selected="false" aria-controls="paneKeys">API keys</button>
+      </nav>
+
+      <div class="sheetbody">
+
+        <section class="pane" id="paneModels" role="tabpanel" aria-labelledby="tabModels">
+          <div class="panehead">
+            <div>
+              <h3>Pinned model</h3>
+              <p class="note">The model pin is stored only in FORGE 3.0.</p>
+            </div>
+            <span class="pinned" id="setPinned">&mdash;</span>
+          </div>
+          <div class="searchwrap wide">
+            <svg width="13" height="13" viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="6" cy="6" r="4.2"></circle><path d="M9.2 9.2 12 12" stroke-linecap="round"></path></svg>
+            <input class="search" id="setModelSearch" type="search" placeholder="Search cheap models" autocomplete="off" aria-label="Search cheap models">
+          </div>
+          <label class="onlykeyed"><input type="checkbox" id="setOnlyKeyed"><span>Only providers with a key</span></label>
+          <div class="modellist tall" id="setModelList"></div>
+          <p class="note foot">Cheap floor, Kimi mid-tier including K3, and Grok 4.5 / 4.6.</p>
+        </section>
+
+        <section class="pane" id="paneKeys" role="tabpanel" aria-labelledby="tabKeys" hidden>
+          <div class="panehead">
+            <div>
+              <h3>Provider keys</h3>
+              <p class="note" id="keysNote">Keys are stored only for FORGE 3.0.</p>
+            </div>
+          </div>
+          <div class="keylist" id="setKeyList"></div>
+        </section>
+
+      </div>
+    </div>
+
+    <footer class="sheetfoot">
+      <span id="setFootLeft">storage &middot; <b id="setDrawer">~/.forge-3</b></span>
+      <span id="setFootRight">FORGE 3.0 only</span>
+    </footer>
+  </div>
+</div>
+
+<div class="modal" id="unlock" hidden>
+  <div class="card">
+    <svg class="glyph" viewBox="0 0 200 200" aria-hidden="true"><use href="#forgeSword"></use></svg>
+    <h2>Unlock the vault</h2>
+    <p>Unlock the sealed FORGE 3.0 profile and encrypted chat drawer.</p>
+    <input id="pass" type="password" placeholder="Passphrase" autocomplete="current-password">
+    <div class="cardrow">
+      <button type="button" id="unlockBtn">Unlock</button>
+      <span class="err" id="unlockErr"></span>
+    </div>
+  </div>
+</div>
+
+<script src="app.js"></script>
+</body>
+</html>

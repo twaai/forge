@@ -1,0 +1,28 @@
+[build-system]
+requires = ["setuptools>=69"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "forge-prompt"
+version = "3.0.0"
+description = "Forge 3.0 desktop chat workshop for compiling production system prompts."
+readme = "README.md"
+requires-python = ">=3.10"
+license = { file = "LICENSE" }
+dependencies = [
+    "anthropic>=0.40.0",
+    "cryptography>=42.0.0",
+    "openai>=1.30.0",
+    "python-dotenv>=1.0.0",
+    "pywebview>=5.0.0",
+    "truststore>=0.9.0",
+]
+
+[project.scripts]
+forge = "forge3.web_main:main"
+
+[tool.setuptools]
+packages = ["forge3", "forge3.core"]
+
+[tool.pytest.ini_options]
+testpaths = ["forge3/tests"]

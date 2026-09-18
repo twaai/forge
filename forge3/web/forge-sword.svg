@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 200 200" fill="none">
+  <!-- Forge sword mark. Geometry from forge/_make_forge_icon.py (200px design box). -->
+  <defs>
+    <linearGradient id="forgeSweep" x1="100" y1="18" x2="100" y2="190" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffeeb0"/>
+      <stop offset=".45" stop-color="#ffc61a"/>
+      <stop offset="1" stop-color="#b05e12"/>
+    </linearGradient>
+  </defs>
+  <path fill="url(#forgeSweep)" d="M100 18 116 45 112 119 88 119 84 45Z"/>
+  <path fill="url(#forgeSweep)" d="M45 116 88 108 94 126 67 137 50 130Z"/>
+  <path fill="url(#forgeSweep)" d="M155 116 112 108 106 126 133 137 150 130Z"/>
+  <rect x="93" y="124" width="14" height="42" rx="3" fill="url(#forgeSweep)"/>
+  <path fill="url(#forgeSweep)" d="M100 164 114 178 100 190 86 178Z"/>
+  <path fill="#783c0c" fill-opacity=".55" d="M100 27 104 48 103 112 97 112 96 48Z"/>
+</svg>

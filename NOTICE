@@ -1,0 +1,16 @@
+Forge
+Copyright 2026 twaai
+
+Licensed under the terms of the LICENSE file distributed with this repository.
+This program is distributed WITHOUT ANY WARRANTY; see the LICENSE for details.
+
+Runtime dependencies are installed from PyPI under their respective licenses:
+
+- anthropic — MIT
+- cryptography — Apache-2.0 / BSD-3-Clause
+- openai — Apache-2.0
+- pywebview — BSD-3-Clause
+- truststore — MIT
+
+Forge is a prompt-engineering tool for authorized research and evaluation. See
+SECURITY.md.
