@@ -37,18 +37,21 @@ SHA-256 checksums are published as `SHA256SUMS.txt` beside every release.
 
 ## Run from source
 
-Python 3.10 or newer is required.
+The release builds require no Python installation. Download the executable for
+your platform from the latest release and run it directly.
+
+For a source checkout, `forge.bat` creates `.venv` and installs dependencies on
+its first run. When Python is absent, it downloads the checksummed Windows build
+from the latest GitHub release instead.
 
 ```bash
 git clone https://github.com/twaai/forge.git
 cd forge
-python -m venv .venv
 ```
 
 Windows:
 
 ```powershell
-.venv\Scripts\python -m pip install -r requirements.txt
 .\forge.bat
 ```
 

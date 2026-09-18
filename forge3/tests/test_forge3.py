@@ -52,6 +52,14 @@ def test_distribution_uses_only_forge_branding() -> None:
         assert retired not in source.read_text(encoding="utf-8").casefold()
 
 
+def test_windows_launcher_bootstraps_or_downloads() -> None:
+    launcher = (ROOT.parent / "forge.bat").read_text(encoding="utf-8")
+    assert '-m venv "%ROOT%.venv"' in launcher
+    assert "Forge-3.0-windows-x64.exe" in launcher
+    assert "Get-FileHash -Algorithm SHA256" in launcher
+    assert "Python was not found" not in launcher
+
+
 def test_forge_bridge_is_not_lites() -> None:
     assert Path(sys.modules["forge3.web_api"].__file__).parent == ROOT
     shell = (ROOT / "web" / "app.js").read_text(encoding="utf-8")
