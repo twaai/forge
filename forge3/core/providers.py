@@ -31,6 +31,10 @@ from pathlib import Path
 from typing import Iterator, Optional
 
 from forge3.core.codex_client import CODEX_MODELS
+from forge3.core.http_transport import (
+    provider_http_client,
+    system_tls_verifier as system_tls_verifier,
+)
 from forge3.core.model_catalogs import (
     OPENROUTER_MODELS,
     ORCAROUTER_MODELS,
@@ -152,6 +156,7 @@ THINKING_MODEL_MARKERS = (
     "claude", "gpt-6-astra", "deepseek-v4", "deepseek-reasoner",
     "grok-4.6", "gemini-3.8", "gemini-3.6", "muse-spark",
     "qwen3.7", "glm-5", "reasoner", "thinking",
+    "kimi-k3", "kimi-k2-thinking",
 )
 REASONING_BUDGET_RATIO = 0.5
 MIN_REASONING_TOKENS = 1024  # Anthropic rejects a smaller thinking budget
@@ -356,7 +361,6 @@ class Backend:
     env_keys: list[str] = field(default_factory=list)     # env vars to check
     request_body: dict[str, object] = field(default_factory=dict)
     free: bool = False
-    local: bool = False
     blurb: str = ""
 
     def __post_init__(self) -> None:
@@ -367,12 +371,10 @@ class Backend:
 
     @property
     def tag(self) -> str:
-        return "free" if self.free else ("local" if self.local else "paid")
+        return "free" if self.free else "paid"
 
     # ── key resolution: forge3 keys → forge keys → legacy → env ──
     def load_key(self) -> Optional[str]:
-        if self.local:
-            return "local"
         if self.dialect == "codex":
             from forge3.core.codex_auth import available
             return "codex-login" if available() else None
@@ -461,8 +463,8 @@ BACKENDS: dict[str, Backend] = {
         blurb="native · Claude direct · real classifier + cache · TEST TARGET",
     ),
     "openrouter": Backend(
-        "openrouter", "https://openrouter.ai/api/v1", "x-ai/grok-4.5",
-        cascade=["x-ai/grok-4.5", "deepseek/deepseek-v4-pro-0813", "moonshotai/kimi-k3",
+        "openrouter", "https://openrouter.ai/api/v1", "x-ai/grok-4.6",
+        cascade=["x-ai/grok-4.6", "deepseek/deepseek-v4-pro-0813", "moonshotai/kimi-k3",
                  "nousresearch/hermes-4-405b"],
         models=OPENROUTER_MODELS, env_keys=["OPENROUTER_API_KEY"],
         blurb="paid · every model · strongest drafters + Claude targets",
@@ -539,14 +541,6 @@ BACKENDS: dict[str, Backend] = {
         cascade=["deepseek-ai/DeepSeek-R1"],
         models=["deepseek-ai/DeepSeek-R1", "NousResearch/Hermes-3-Llama-3.1-405B"],
         env_keys=["TOGETHER_API_KEY"], blurb="paid · open models",
-    ),
-    "local": Backend(
-        "local", "http://localhost:1234/v1", "local-model",
-        local=True, blurb="offline · LM Studio :1234",
-    ),
-    "local-ollama": Backend(
-        "local-ollama", "http://localhost:11434/v1", "llama3.3",
-        local=True, blurb="offline · Ollama :11434",
     ),
 }
 
@@ -744,11 +738,11 @@ class AnthropicClient(Client):
     def __init__(self, key: str, verify: bool = True) -> None:
         super().__init__()
         from anthropic import Anthropic
-        kwargs = {}
-        if not verify:  # only for the MITM-proxy box; see providers note
-            import httpx
-            kwargs["http_client"] = httpx.Client(verify=False, timeout=180.0)
-        self.client = Anthropic(api_key=key, **kwargs)
+        self.client = Anthropic(
+            api_key=key,
+            http_client=provider_http_client(verify),
+            max_retries=4,
+        )
 
     def stream(self, model, system, messages, max_tokens=4000, temperature=0.9,
                json_mode=False):
@@ -799,13 +793,14 @@ class OpenAICompatClient(Client):
     ) -> None:
         super().__init__()
         from openai import OpenAI
-        kwargs = {}
-        if not verify:
-            import httpx
-            kwargs["http_client"] = httpx.Client(verify=False, timeout=180.0)
         self._base_url = base_url
         self._request_body = dict(request_body or {})
-        self.client = OpenAI(base_url=base_url, api_key=key, **kwargs)
+        self.client = OpenAI(
+            base_url=base_url,
+            api_key=key,
+            http_client=provider_http_client(verify),
+            max_retries=4,
+        )
 
     def _gemini_endpoint(self, model: str) -> bool:
         blob = f"{getattr(self, '_base_url', '')} {model}".lower()
@@ -1037,7 +1032,6 @@ class CodexClient(Client):
             self._hidden_text = "".join(hidden)
 
     def _stream_once(self, url, body, hidden, session, CodexAuthError, delta_text, hidden_text):
-        import httpx
         from forge3.core.codex_client import CodexRequestError, safe_error_detail
 
         access, account = session()
@@ -1049,7 +1043,7 @@ class CodexClient(Client):
             "OpenAI-Beta": "responses=experimental",
             "originator": "codex_cli_rs",
         }
-        with httpx.Client(verify=self._verify, timeout=180.0) as client:
+        with provider_http_client(self._verify) as client:
             with client.stream("POST", url, headers=headers, json=body) as response:
                 if response.status_code == 401:
                     raise CodexAuthError("Codex login expired — run `codex login`")

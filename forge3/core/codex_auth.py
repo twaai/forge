@@ -14,6 +14,8 @@ import uuid
 from pathlib import Path
 from typing import Any
 
+from forge3.core.http_transport import provider_http_client
+
 # Public Codex CLI OAuth client. Same id the official CLI uses to refresh.
 _CLIENT_ID = "app_EMoamEEZ73f0CkXaXp7hrann"
 _TOKEN_URL = "https://auth.openai.com/oauth/token"
@@ -110,15 +112,15 @@ def _refresh(refresh_token: str, account_id: str) -> tuple[str, str, str]:
     import httpx
 
     try:
-        response = httpx.post(
-            _TOKEN_URL,
-            data={
-                "grant_type": "refresh_token",
-                "refresh_token": refresh_token,
-                "client_id": _CLIENT_ID,
-            },
-            timeout=30.0,
-        )
+        with provider_http_client(True, timeout=30.0) as client:
+            response = client.post(
+                _TOKEN_URL,
+                data={
+                    "grant_type": "refresh_token",
+                    "refresh_token": refresh_token,
+                    "client_id": _CLIENT_ID,
+                },
+            )
     except httpx.HTTPError as exc:
         raise CodexAuthError("Codex token refresh failed") from exc
     if response.status_code >= 400:

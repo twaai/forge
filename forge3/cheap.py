@@ -1,4 +1,4 @@
-"""Forge 3.0 picker: cheap live slug per family, plus a few flagships that earn it."""
+"""Forge 3.1 picker: verified live models plus selected flagships."""
 
 from __future__ import annotations
 
@@ -7,12 +7,11 @@ from typing import Any
 from forge3.core import providers as P
 
 DEFAULT_BACKEND = "openrouter"
-DEFAULT_MODEL = "x-ai/grok-4-fast"
+DEFAULT_MODEL = "x-ai/grok-4.6"
 
 # Cheap floor + mid Kimi + selected flagships including Grok 4.5 and Kimi K3.
 CHEAP_BY_BACKEND: dict[str, tuple[str, ...]] = {
     "openrouter": (
-        "x-ai/grok-4-fast",
         "x-ai/grok-4.5",
         "x-ai/grok-4.6",
         "deepseek/deepseek-v4-flash",
@@ -55,18 +54,15 @@ CHEAP_BY_BACKEND: dict[str, tuple[str, ...]] = {
     "xai": ("grok-4-fast", "grok-4.5", "grok-4.6"),
 }
 
-KEEP_ALL = frozenset({"local", "local-ollama"})
-
 # Slugs missing from the Sept 10 snapshot or from a backend's curated list.
 INJECT: tuple[tuple[str, str], ...] = (
-    ("openrouter", "x-ai/grok-4-fast"),
     ("xai", "grok-4-fast"),
     ("zai", "glm-5.3-flash"),
 )
 
 CHEAP_CASCADE: dict[str, tuple[str, ...]] = {
     "openrouter": (
-        "x-ai/grok-4-fast",
+        "x-ai/grok-4.6",
         "deepseek/deepseek-v4-flash",
         "z-ai/glm-5.3-flash",
     ),
@@ -78,6 +74,7 @@ CHEAP_CASCADE: dict[str, tuple[str, ...]] = {
 }
 
 PIN_REMAP: dict[tuple[str, str], tuple[str, str]] = {
+    ("openrouter", "x-ai/grok-4-fast"): ("openrouter", "x-ai/grok-4.6"),
     ("openrouter", "~x-ai/grok-latest"): ("openrouter", "x-ai/grok-4.6"),
     ("xai", "grok-4"): ("xai", "grok-4.5"),
     ("zai", "glm-5.1"): ("zai", "glm-5.3"),
@@ -86,8 +83,6 @@ PIN_REMAP: dict[tuple[str, str], tuple[str, str]] = {
 
 
 def is_allowed(backend: str, model: str) -> bool:
-    if backend in KEEP_ALL:
-        return True
     allowed = CHEAP_BY_BACKEND.get(backend)
     return bool(allowed) and model in allowed
 

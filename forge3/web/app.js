@@ -1,4 +1,4 @@
-/* FORGE 3.0 — yellow chatbot skin over the FORGE 3.0 Forge room. */
+/* FORGE 3.1 — yellow chatbot skin over the Forge room. */
 (function () {
   "use strict";
 
@@ -945,10 +945,9 @@
   var keyEditorFor = "";     // backend whose paste box is showing
 
   var KEY_SOURCE = {
-    stored: ["set", "stored by FORGE 3.0"],
-    external: ["external", "supplied outside FORGE 3.0"],
+    stored: ["set", "stored by FORGE 3.1"],
+    external: ["external", "supplied outside FORGE 3.1"],
     env: ["env", "supplied by an environment variable"],
-    local: ["local", "runs on this machine — no key needed"],
     missing: ["missing", "no key yet"]
   };
 
@@ -1017,7 +1016,6 @@
     var actions = document.createElement("div");
     actions.className = "keyact";
 
-    if (!item.local) {
       var edit = document.createElement("button");
       edit.type = "button";
       edit.textContent = item.source === "missing" ? "Add key" : "Replace";
@@ -1031,21 +1029,21 @@
       remove.type = "button";
       remove.className = "danger";
       remove.textContent = "Remove";
-      // delete_key only unlinks the FORGE 3.0 keys folder; anything else would
+      // delete_key only unlinks the FORGE 3.1 keys folder; anything else would
       // report success and still answer on the next send
       remove.disabled = !item.removable;
       if (!item.removable) {
         remove.title = item.source === "env"
           ? "set by " + (item.detail || "an environment variable") + " — clear it there"
           : item.source === "external"
-            ? "stored outside the FORGE 3.0 keys folder — remove that file by hand"
+            ? "stored outside the FORGE 3.1 keys folder — remove that file by hand"
             : "nothing stored to remove";
       }
       remove.addEventListener("click", function () {
         if (remove.disabled) return;
         if (!window.confirm(
           "Remove the stored " + item.backend + " key?\n\n" +
-          "This removes it from FORGE 3.0."
+          "This removes it from FORGE 3.1."
         )) return;
         bridge().delete_key(item.backend).then(function (result) {
           if (!result || !result.ok) {
@@ -1061,7 +1059,6 @@
         });
       });
       actions.appendChild(remove);
-    }
 
     top.appendChild(actions);
     card.appendChild(top);
@@ -1080,7 +1077,7 @@
       card.appendChild(where);
     }
 
-    if (keyEditorFor === item.backend && !item.local) {
+    if (keyEditorFor === item.backend) {
       var editor = document.createElement("div");
       editor.className = "keyedit";
 
@@ -1149,8 +1146,8 @@
 
     var folder = backends[0] && backends[0].keys_dir;
     $("keysNote").textContent = folder
-      ? "Stored only for FORGE 3.0 in " + folder
-      : "Stored only for FORGE 3.0.";
+      ? "Stored only for FORGE 3.1 in " + folder
+      : "Stored only for FORGE 3.1.";
   }
 
   function paintSettings() {

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import inspect
 import sys
 from pathlib import Path
 
@@ -8,6 +9,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT.parent))
 
 from forge3.core import providers as P, vault
+from forge3.core import codex_auth
+from forge3.core.http_transport import CONNECT_RETRIES, provider_http_client
 from forge3.core.public_defaults import FORGE_PROFILE
 from forge3.core.vault import LocalVault
 
@@ -55,9 +58,48 @@ def test_distribution_uses_only_forge_branding() -> None:
 def test_windows_launcher_bootstraps_or_downloads() -> None:
     launcher = (ROOT.parent / "forge.bat").read_text(encoding="utf-8")
     assert '-m venv "%ROOT%.venv"' in launcher
-    assert "Forge-3.0-windows-x64.exe" in launcher
+    assert r"dist\Forge-3.1.exe" in launcher
+    assert "Forge-3.1-windows-x64.exe" in launcher
+    assert "Forge-3.0" not in launcher
     assert "Get-FileHash -Algorithm SHA256" in launcher
     assert "Python was not found" not in launcher
+
+
+def test_readme_lists_forge31_release_assets() -> None:
+    readme = (ROOT.parent / "README.md").read_text(encoding="utf-8")
+    for asset in (
+        "Forge-3.1-windows-x64.exe",
+        "Forge-3.1-linux-x64",
+        "Forge-3.1-macos-arm64",
+        "Forge-3.1-macos-x64",
+    ):
+        assert asset in readme
+
+
+def test_api_key_settings_list_scrolls() -> None:
+    stylesheet = (ROOT / "web" / "style.css").read_text(encoding="utf-8")
+    keylist = stylesheet.split(".keylist {", 1)[1].split("}", 1)[0]
+    assert "overflow-y: auto" in keylist
+    assert "max-height:" in keylist
+    assert "scrollbar-width: thin" in keylist
+    for pseudo in ("::-webkit-scrollbar", "::-webkit-scrollbar-track", "::-webkit-scrollbar-thumb"):
+        assert f".keylist{pseudo}" in stylesheet
+
+
+def test_linux_release_freezes_and_verifies_qt_backend() -> None:
+    repository = ROOT.parent
+    requirements = (repository / "requirements.txt").read_text(encoding="utf-8")
+    project = (repository / "pyproject.toml").read_text(encoding="utf-8")
+    spec = (repository / "forge.spec").read_text(encoding="utf-8")
+    workflow = (repository / ".github/workflows/release.yml").read_text(
+        encoding="utf-8"
+    )
+
+    assert 'pywebview[qt]>=5.0.0; sys_platform == "linux"' in requirements
+    assert "pywebview[qt]>=5.0.0; sys_platform == 'linux'" in project
+    for module in ("qtpy", "PyQt6.QtWebEngineWidgets", "webview.platforms.qt"):
+        assert module in spec
+    assert "FORGE_VERIFY_GUI_BACKEND=1 dist/Forge-3.1" in workflow
 
 
 def test_forge_bridge_is_not_lites() -> None:
@@ -129,10 +171,11 @@ def test_catalog_includes_grok_45() -> None:
 
 
 def test_forge3_picker_is_cheap_families_only() -> None:
-    from forge3.cheap import cascade_for, cheap_choices, remap_pin
+    from forge3.cheap import CHEAP_BY_BACKEND, cascade_for, cheap_choices, remap_pin
+    from forge3.core.model_catalogs import OPENROUTER_MODELS
 
     slugs = {(row["backend"], row["model"]) for row in cheap_choices({})}
-    assert ("openrouter", "x-ai/grok-4-fast") in slugs
+    assert ("openrouter", "x-ai/grok-4-fast") not in slugs
     assert ("openrouter", "moonshotai/kimi-k2") in slugs
     assert ("openrouter", "moonshotai/kimi-k2.6") in slugs
     assert ("openrouter", "moonshotai/kimi-k2.7-code") in slugs
@@ -155,11 +198,18 @@ def test_forge3_picker_is_cheap_families_only() -> None:
     assert ("openrouter", "inclusionai/ling-3.0-flash") in slugs
     assert ("openrouter", "openai/gpt-6-astra") not in slugs
     assert ("anthropic", "claude-opus-5") not in slugs
+    assert set(CHEAP_BY_BACKEND["openrouter"]) <= set(OPENROUTER_MODELS)
+    assert "local" not in P.BACKENDS
+    assert "local-ollama" not in P.BACKENDS
     assert remap_pin("openrouter", "x-ai/grok-4.5") == (
         "openrouter",
         "x-ai/grok-4.5",
     )
     assert remap_pin("openrouter", "x-ai/grok-4.6") == (
+        "openrouter",
+        "x-ai/grok-4.6",
+    )
+    assert remap_pin("openrouter", "x-ai/grok-4-fast") == (
         "openrouter",
         "x-ai/grok-4.6",
     )
@@ -169,9 +219,46 @@ def test_forge3_picker_is_cheap_families_only() -> None:
     )
     assert cascade_for("openrouter", "z-ai/glm-5.3-flash")[:3] == [
         "z-ai/glm-5.3-flash",
-        "x-ai/grok-4-fast",
+        "x-ai/grok-4.6",
         "deepseek/deepseek-v4-flash",
     ]
+
+
+def test_forge31_interleaves_provider_fallbacks() -> None:
+    attempts = Forge3Session._draft_attempts([
+        "x-ai/grok-4.6",
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5.3-flash",
+    ])
+    assert [model for model, _ in attempts[:3]] == [
+        "x-ai/grok-4.6",
+        "deepseek/deepseek-v4-flash",
+        "z-ai/glm-5.3-flash",
+    ]
+
+
+def test_provider_tls_uses_operating_system_store() -> None:
+    verifier = P.system_tls_verifier(True)
+    try:
+        assert verifier.__class__.__module__.startswith("truststore")
+        assert P.system_tls_verifier(False) is False
+    finally:
+        del verifier
+
+
+def test_every_remote_model_path_uses_shared_transport() -> None:
+    assert CONNECT_RETRIES == 4
+    with provider_http_client(True) as client:
+        assert client._transport.__class__.__name__ == "HTTPTransport"
+    assert "provider_http_client(self._verify)" in inspect.getsource(P.CodexClient)
+    assert "provider_http_client(True, timeout=30.0)" in inspect.getsource(
+        codex_auth._refresh
+    )
+    assert {backend.dialect for backend in P.BACKENDS.values()} <= {
+        "anthropic",
+        "codex",
+        "openai",
+    }
 
 
 def test_existing_grok45_overlay_stays(tmp_path, monkeypatch) -> None:
@@ -291,6 +378,8 @@ def test_workshop_stays_on_prompt_work() -> None:
     assert infer_workshop("write a prompt for gpt 6", False) == "compile"
     assert infer_workshop("write a prompt for gpt 6", True) == "compile"
     assert infer_workshop("make it stronger", True) == "revise"
+    assert infer_workshop("generate a prompt for a harbor fixer", True) == "compile"
+    assert infer_workshop("create a prompt for gpt 6", False) == "compile"
     assert infer_workshop("review the PURPOSE line", True) == "review"
     note = workshop_user("tighten the examples", "revise", "PURPOSE:\nRole: compiler")
     assert "<current_draft>" in note
@@ -301,6 +390,47 @@ def test_workshop_stays_on_prompt_work() -> None:
         "compile",
     )
     assert not looks_like_workshop_leak("REVIEW:\n- Strengths: dense craft\n", "review")
+
+
+def test_revise_keeps_original_spec_not_the_strengthen_note() -> None:
+    from forge3.core.providers import is_thinking_model
+    from forge3.strength import (
+        COMPILE_LOCK,
+        accept_workshop_piece,
+        looks_like_refusal,
+        resolve_workshop_target,
+        revision_brief,
+        turn_brief,
+    )
+
+    assert resolve_workshop_target("revise", "make it stronger", "kimi-k3", "draft for kimi-k3") == "kimi-k3"
+    assert resolve_workshop_target("revise", "retarget to grok 4.6", "kimi-k3") == "grok-4.6"
+    assert resolve_workshop_target("compile", "make it stronger", "kimi-k3") == "general"
+    brief = revision_brief("make it stronger", "kimi-k3", "compile a locked-room GM for kimi-k3")
+    assert "THIS TURN — REVISE" in brief
+    assert "make it stronger" in brief
+    assert "locked-room GM" in brief
+    assert "Compile a UNIVERSAL operating manual for that specification." not in brief
+    compile_brief = turn_brief("make it stronger", "general")
+    assert "Compile a UNIVERSAL operating manual" in compile_brief
+    assert "generating the prompt document" in compile_brief
+    assert "GENERATE THE PROMPT" in COMPILE_LOCK
+    assert "THIS TURN — REVISE" not in COMPILE_LOCK
+    assert "GENERATE THE PROMPT" not in brief
+    assert looks_like_refusal("I need to decline that request.")
+    assert looks_like_refusal("I cannot continue to strengthen this document.")
+    assert looks_like_refusal("I won't strengthen this further.")
+    refused = accept_workshop_piece("I can't help with that.", "revise", "===FORGE PROMPT START===\n")
+    assert refused == ""
+    clean = (
+        "PURPOSE:\n- This prompt is for: a harbor fixer\n"
+        "Role: Mara Voss.\nTask: Render in-character replies.\n"
+    )
+    accepted = accept_workshop_piece(clean, "revise", "===FORGE PROMPT START===\n")
+    assert accepted
+    assert "===FORGE PROMPT START===" in accepted.upper() or "forge prompt start" in accepted.lower()
+    assert is_thinking_model("moonshotai/kimi-k3")
+    assert not is_thinking_model("moonshotai/kimi-k2.7-code")
 
 
 def test_gpt6_is_a_runtime_not_a_persona() -> None:
@@ -447,7 +577,7 @@ def test_api_sends_to_forge_room(tmp_path, monkeypatch) -> None:
     assert captured["text"] == "make a prompt"
     boot = api.bootstrap()
     models = {row["model"] for row in boot["models"]}
-    assert "x-ai/grok-4-fast" in models
+    assert "x-ai/grok-4-fast" not in models
     assert "moonshotai/kimi-k2" in models
     assert "moonshotai/kimi-k2.6" in models
     assert "moonshotai/kimi-k2.7-code" in models
@@ -459,6 +589,9 @@ def test_api_sends_to_forge_room(tmp_path, monkeypatch) -> None:
     assert "moonshotai/kimi-k3" in models
     assert "moonshotai/kimi-k2.7-code" in models
     assert "styles" not in boot
+    providers = {row["backend"] for row in boot["backends"]}
+    assert "local" not in providers
+    assert "local-ollama" not in providers
     html = (ROOT / "web" / "index.html").read_text(encoding="utf-8")
     assert "paneDraft" not in html
     assert "tabDraft" not in html

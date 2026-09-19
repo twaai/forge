@@ -10,6 +10,7 @@ _CONFIG = FORGE3_HOME / "config.json"
 
 _MODEL_MIGRATIONS = {
     "deepseek/deepseek-v4": "deepseek/deepseek-v4-pro-0813",
+    "x-ai/grok-4-fast": "x-ai/grok-4.6",
 }
 _MODEL_FIELDS = (
     "chat_model",
@@ -23,7 +24,7 @@ _DEFAULTS = {
     "chat_backend": "openrouter",
     "chat_model": "anthropic/claude-opus-4.8",
     "draft_backend": "openrouter",
-    "draft_model": "x-ai/grok-4.5",
+    "draft_model": "x-ai/grok-4.6",
     "style": "auto",
     "target": "general",
     "temp": 0.9,

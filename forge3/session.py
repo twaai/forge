@@ -23,7 +23,7 @@ def judge_key_error(cfg: dict[str, Any] | None = None) -> str | None:
     backend = P.BACKENDS.get(name)
     if backend is None:
         return f"Anvil's judge backend '{name}' is unknown."
-    if backend.local or backend.has_key():
+    if backend.has_key():
         return None
     model = str(cfg.get("judge_model") or backend.default_model)
     short = model.split("/")[-1]
@@ -144,6 +144,8 @@ class ForgeSessionBase:
         self._anvil_reports: list[dict[str, Any]] = []
         self._last_draft: str | None = None
         self._last_goal: str | None = None
+        self._last_spec: str | None = None
+        self._last_target: str = ""
         self._draft_version = 0
         self._history_store: Any | None = None
         self._session_id: str | None = None
@@ -246,7 +248,7 @@ class ForgeSessionBase:
                 "anvil_max_versions": int(self._cfg.get("anvil_max_versions", 3)),
                 "anvil_threshold": int(self._cfg.get("anvil_threshold", anvil.STAR_MAX)),
                 "keys": {
-                    name: "local" if backend.local else ("set" if backend.has_key() else "missing")
+                    name: "set" if backend.has_key() else "missing"
                     for name, backend in P.BACKENDS.items()
                 },
                 "last_draft": bool(self._last_draft),
@@ -312,6 +314,8 @@ class ForgeSessionBase:
             if not self._last_goal:
                 stem = path.stem if path is not None else "saved"
                 self._last_goal = f"Evaluate saved Forge prompt {stem}"
+            if not self._last_spec:
+                self._last_spec = self._last_goal
             if self._draft_version <= 0:
                 self._draft_version = 1
             return self._last_draft
@@ -1039,8 +1043,8 @@ class ForgeSessionBase:
         return {"ok": True, "state": state}
 
     def save_key(self, backend: str, key: str) -> dict[str, Any]:
-        if backend not in P.BACKENDS or P.BACKENDS[backend].local:
-            return {"ok": False, "error": "unknown or local backend"}
+        if backend not in P.BACKENDS:
+            return {"ok": False, "error": "unknown backend"}
         if P.BACKENDS[backend].dialect == "codex":
             return {"ok": False, "error": "Codex uses `codex login` on this machine, not a pasted key"}
         if not key.strip():
@@ -1051,8 +1055,8 @@ class ForgeSessionBase:
         return {"ok": True, "state": state}
 
     def delete_key(self, backend: str) -> dict[str, Any]:
-        if backend not in P.BACKENDS or P.BACKENDS[backend].local:
-            return {"ok": False, "error": "unknown or local backend"}
+        if backend not in P.BACKENDS:
+            return {"ok": False, "error": "unknown backend"}
         if P.BACKENDS[backend].dialect == "codex":
             return {"ok": False, "error": "log out with `codex logout`, not Remove"}
         try:
@@ -1073,6 +1077,8 @@ class ForgeSessionBase:
                 "anvil_reports": list(self._anvil_reports),
                 "last_draft": self._last_draft,
                 "last_goal": self._last_goal,
+                "last_spec": self._last_spec,
+                "last_target": self._last_target,
                 "draft_version": self._draft_version,
             }
 
@@ -1123,6 +1129,8 @@ class ForgeSessionBase:
             self._anvil_reports = []
             self._last_draft = None
             self._last_goal = None
+            self._last_spec = None
+            self._last_target = ""
             self._draft_version = 0
             for slot in self._rooms.values():
                 slot.last_reply = ""
@@ -1150,6 +1158,8 @@ class ForgeSessionBase:
             self._anvil_reports = list(payload.get("anvil_reports", []))
             self._last_draft = payload.get("last_draft")
             self._last_goal = payload.get("last_goal")
+            self._last_spec = payload.get("last_spec") or payload.get("last_goal")
+            self._last_target = str(payload.get("last_target") or "")
             self._draft_version = int(payload.get("draft_version", 0))
         if not self._last_draft:
             self._ensure_draft()
@@ -1191,6 +1201,8 @@ class ForgeSessionBase:
                 self._draft_history.clear()
                 self._last_draft = None
                 self._last_goal = None
+                self._last_spec = None
+                self._last_target = ""
                 self._draft_version = 0
             else:
                 self._anvil_history.clear()

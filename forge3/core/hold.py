@@ -141,6 +141,7 @@ _THINKING_MODEL_MARKERS = (
     "claude", "gpt-6-astra", "deepseek-v4", "deepseek-reasoner",
     "grok-4.6", "gemini-3.8", "gemini-3.6", "muse-spark",
     "qwen3.7", "glm-5", "reasoner", "thinking",
+    "kimi-k3", "kimi-k2-thinking",
 )
 
 _LEADING_DECORATION = re.compile(r"^[\s`*_>#\"'\[\](){}\-–—|:.,;!?]+")

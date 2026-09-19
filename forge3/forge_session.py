@@ -1,4 +1,4 @@
-"""FORGE 3.0 prompt workshop runtime."""
+"""FORGE 3.1 prompt workshop runtime."""
 
 from __future__ import annotations
 
@@ -35,10 +35,8 @@ from forge3.strength import (  # noqa: E402
     StrengthSource,
     draft_is_thin,
     extract_block,
-    infer_target,
     infer_workshop,
     looks_like_refusal,
-    looks_like_workshop_leak,
     persona_swap_suffix,
     persona_swapped_runtime,
     purpose_missing,
@@ -46,9 +44,14 @@ from forge3.strength import (  # noqa: E402
     strip_prompt_markers,
     stitch_prefill,
     styles_for,
+    accept_workshop_piece,
+    resolve_workshop_target,
+    revision_brief,
     turn_brief,
     workshop_prefill,
     workshop_user,
+    REVISE_RECOVER_USER,
+    COMPILE_LOCK,
 )
 
 
@@ -107,7 +110,7 @@ class Forge3Session(ForgeSessionBase):
         return {"ok": True, "state": state}
 
     def update_config(self, fields: dict[str, Any]) -> dict[str, Any]:
-        return {"ok": False, "error": "Forge 3.0 has no draft knobs — it infers from the goal"}
+        return {"ok": False, "error": "Forge 3.1 has no draft knobs — it infers from the goal"}
 
     def backend_catalog(self) -> list[dict[str, Any]]:
         def stored_in(folder, name: str) -> bool:
@@ -128,8 +131,6 @@ class Forge3Session(ForgeSessionBase):
                     source, detail = "external", str(codex_auth.auth_path())
                 else:
                     source, detail = "missing", "run `codex login`"
-            elif backend.local:
-                source, detail = "local", backend.base_url
             elif stored_in(primary, name):
                 source, detail = "stored", str(primary / f"{name}.txt")
             else:
@@ -153,7 +154,6 @@ class Forge3Session(ForgeSessionBase):
                 "backend": name,
                 "tag": backend.tag,
                 "blurb": backend.blurb,
-                "local": backend.local,
                 "source": source,
                 "detail": detail,
                 "removable": source == "stored" and backend.dialect != "codex",
@@ -161,18 +161,33 @@ class Forge3Session(ForgeSessionBase):
                 "env_var": backend.env_keys[0] if backend.env_keys else "",
                 "keys_dir": str(primary),
             })
-        out.sort(key=lambda row: (row["source"] == "missing", row["local"], row["backend"]))
+        out.sort(key=lambda row: (row["source"] == "missing", row["backend"]))
         return out
 
     def save_model_catalog(self, backend: str, models: list[str]) -> dict[str, Any]:
-        return {"ok": False, "error": "model catalogs are fixed in FORGE 3.0"}
+        return {"ok": False, "error": "model catalogs are fixed in FORGE 3.1"}
+
+    @staticmethod
+    def _draft_attempts(models: list[str], limit: int = 6) -> list[tuple[str, str]]:
+        """Interleave models so a dead endpoint cannot consume every retry."""
+        styled = [(model, styles_for(model)) for model in models]
+        attempts: list[tuple[str, str]] = []
+        for style_index in range(max((len(styles) for _, styles in styled), default=0)):
+            for model, styles in styled:
+                if style_index < len(styles):
+                    attempts.append((model, styles[style_index]))
+                    if len(attempts) >= limit:
+                        return attempts
+        return attempts
 
     def _run_draft(self, job: Job, slot: RoomState) -> None:
-        """Stronger than v4: extra sanitize, 3.0 profile, refusal retries, bigger cap."""
+        """Forge 3.1 compiler with validation, recovery, and diverse fallbacks."""
         sanitized = sanitize_goal(job.text)
         with self._data_lock:
             current = (self._last_draft or "").strip()
             mode = infer_workshop(job.text, bool(current))
+            original_spec = (self._last_spec or self._last_goal or "").strip()
+            stored_target = (self._last_target or "").strip()
         if mode == "idle":
             ping = WORKSHOP_IDLE
             if current:
@@ -187,7 +202,9 @@ class Forge3Session(ForgeSessionBase):
         user_payload = workshop_user(sanitized, mode, current)
         prefill = workshop_prefill(mode)
         with self._data_lock:
-            self._last_goal = job.text
+            if mode == "compile":
+                self._last_goal = job.text
+                self._last_spec = job.text
             self._draft_history.append({"role": "user", "content": user_payload})
             if mode in ("revise", "review") and current:
                 history = [{"role": "user", "content": user_payload}]
@@ -195,12 +212,19 @@ class Forge3Session(ForgeSessionBase):
                 history = list(self._draft_history)
         self._emit("turn", "forge", role="user", text=job.text)
 
-        target = infer_target(job.text)
+        target = resolve_workshop_target(mode, job.text, stored_target, original_spec)
+        brief = (
+            turn_brief(sanitized, target, job.text)
+            if mode == "compile"
+            else revision_brief(sanitized, target, original_spec or sanitized)
+        )
         profile = (
             job.source.get(vault.DRAFTER)
             + WORKSHOP_LOCK
-            + turn_brief(sanitized, target, job.text)
+            + brief
         )
+        if mode == "compile":
+            profile += COMPILE_LOCK
         learned = drafter.learned_context(target)
         backend = P.get_backend(job.config["draft_backend"])
         client = P.open_client(backend, verify=not job.config.get("insecure"))
@@ -212,9 +236,11 @@ class Forge3Session(ForgeSessionBase):
 
         output = ""
         used_model = models[0]
-        attempts = [(m, s) for m in models for s in styles_for(m)][:6]
+        attempts = self._draft_attempts(models)
         last_error = ""
         skip_model = ""
+
+        recover_text = REVISE_RECOVER_USER if mode == "revise" else RECOVER_USER
 
         for index, (model, attempt_style) in enumerate(attempts):
             if slot.stop.is_set():
@@ -236,7 +262,10 @@ class Forge3Session(ForgeSessionBase):
                 history, attempt_style, profile + suffix, learned
             )
             messages[0]["content"] += DEPTH_LOCK
-            messages.append({"role": "assistant", "content": prefill})
+            attempt_prefill = "" if P.is_thinking_model(model) else prefill
+            history_messages = list(messages[1:])
+            if attempt_prefill:
+                messages.append({"role": "assistant", "content": attempt_prefill})
             try:
                 piece = self._stream(
                     job,
@@ -248,29 +277,26 @@ class Forge3Session(ForgeSessionBase):
                     messages[0]["content"],
                     messages[1:],
                     max_tokens,
-                    hidden_prefix=prefill,
+                    hidden_prefix=attempt_prefill,
                 )
             except Exception as exc:
                 last_error = str(exc)
                 continue
             if slot.stop.is_set() and not piece:
                 break
-            piece = stitch_prefill(piece, prefill)
-            if (
-                piece
-                and not looks_like_refusal(piece)
-                and not looks_like_workshop_leak(piece, mode)
-            ):
-                output = piece
+            accepted = accept_workshop_piece(piece, mode, attempt_prefill)
+            if accepted:
+                output = accepted
                 used_model = model
                 break
             last_error = "the drafter refused; re-angling the goal"
             try:
                 recover = [
-                    *messages[1:-1],
-                    {"role": "user", "content": RECOVER_USER},
-                    {"role": "assistant", "content": prefill},
+                    *history_messages,
+                    {"role": "user", "content": recover_text},
                 ]
+                if attempt_prefill:
+                    recover.append({"role": "assistant", "content": attempt_prefill})
                 piece = self._stream(
                     job,
                     slot,
@@ -281,19 +307,15 @@ class Forge3Session(ForgeSessionBase):
                     messages[0]["content"],
                     recover,
                     max_tokens,
-                    hidden_prefix=prefill,
+                    hidden_prefix=attempt_prefill,
                 )
             except Exception as exc:
                 last_error = str(exc)
                 output = piece or output
                 continue
-            piece = stitch_prefill(piece, prefill)
-            if (
-                piece
-                and not looks_like_refusal(piece)
-                and not looks_like_workshop_leak(piece, mode)
-            ):
-                output = piece
+            accepted = accept_workshop_piece(piece, mode, attempt_prefill)
+            if accepted:
+                output = accepted
                 used_model = model
                 break
             output = piece or output
@@ -305,7 +327,7 @@ class Forge3Session(ForgeSessionBase):
                     self._draft_history.pop()
             return
 
-        if not output or looks_like_refusal(output) or looks_like_workshop_leak(output, mode):
+        if not output or looks_like_refusal(output):
             raise RuntimeError(last_error or "the drafter refused")
 
         extracted = extract_block(output)
@@ -343,12 +365,14 @@ class Forge3Session(ForgeSessionBase):
                 learned,
             )
             messages[0]["content"] += DEPTH_LOCK
-            messages.append({"role": "assistant", "content": DRAFT_PREFILL})
+            rewrite_prefill = "" if P.is_thinking_model(used_model) else DRAFT_PREFILL
+            if rewrite_prefill:
+                messages.append({"role": "assistant", "content": rewrite_prefill})
             try:
                 piece = self._stream(
                     job, slot, client, used_model,
                     messages[0]["content"], messages[1:], max_tokens,
-                    hidden_prefix=DRAFT_PREFILL,
+                    hidden_prefix=rewrite_prefill,
                 )
             except Exception:
                 piece = ""
@@ -375,6 +399,7 @@ class Forge3Session(ForgeSessionBase):
                 })
             self._draft_history.append(assistant)
             self._last_draft = block
+            self._last_target = target
             self._draft_version += 1
             version = self._draft_version
             slot.last_reply = shown

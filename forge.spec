@@ -14,6 +14,21 @@ hiddenimports = collect_submodules("forge3.core") + [
     "forge3.web_api",
 ]
 
+# Linux has no built-in pywebview renderer. Freeze the complete Qt backend;
+# PyInstaller's PyQt6 hooks collect Qt plugins and QtWebEngine resources once
+# these dynamically imported modules are visible to analysis.
+if sys.platform.startswith("linux"):
+    hiddenimports += collect_submodules("qtpy") + [
+        "PyQt6.QtCore",
+        "PyQt6.QtGui",
+        "PyQt6.QtNetwork",
+        "PyQt6.QtWebChannel",
+        "PyQt6.QtWebEngineCore",
+        "PyQt6.QtWebEngineWidgets",
+        "PyQt6.QtWidgets",
+        "webview.platforms.qt",
+    ]
+
 for package in ("anthropic", "cryptography", "openai", "truststore", "webview"):
     package_data, package_binaries, package_hidden = collect_all(package)
     datas += package_data
@@ -41,7 +56,7 @@ executable = EXE(
     analysis.binaries,
     analysis.datas,
     [],
-    name="Forge-3.0",
+    name="Forge-3.1",
     debug=False,
     bootloader_ignore_signals=False,
     strip=False,

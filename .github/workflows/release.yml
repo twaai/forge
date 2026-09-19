@@ -6,9 +6,9 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Version tag to build and publish, for example v3.0.0"
+        description: "Version tag to build and publish, for example v3.1.0"
         required: true
-        default: "v3.0.0"
+        default: "v3.1.0"
         type: string
 
 permissions:
@@ -24,20 +24,20 @@ jobs:
         include:
           - os: windows-latest
             label: windows-x64
-            source: dist/Forge-3.0.exe
-            asset: Forge-3.0-windows-x64.exe
+            source: dist/Forge-3.1.exe
+            asset: Forge-3.1-windows-x64.exe
           - os: ubuntu-latest
             label: linux-x64
-            source: dist/Forge-3.0
-            asset: Forge-3.0-linux-x64
+            source: dist/Forge-3.1
+            asset: Forge-3.1-linux-x64
           - os: macos-latest
             label: macos-arm64
-            source: dist/Forge-3.0
-            asset: Forge-3.0-macos-arm64
+            source: dist/Forge-3.1
+            asset: Forge-3.1-macos-arm64
           - os: macos-15-intel
             label: macos-x64
-            source: dist/Forge-3.0
-            asset: Forge-3.0-macos-x64
+            source: dist/Forge-3.1
+            asset: Forge-3.1-macos-x64
 
     steps:
       - name: Select release ref
@@ -65,15 +65,17 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt pyinstaller pytest
-          if [ "${{ runner.os }}" = "Linux" ]; then
-            python -m pip install PyQt6
-          fi
 
       - name: Test
         run: python -m pytest forge3/tests -q
 
       - name: Build native application
         run: pyinstaller --clean --noconfirm forge.spec
+
+      - name: Verify frozen Linux GUI backend
+        if: runner.os == 'Linux'
+        shell: bash
+        run: FORGE_VERIFY_GUI_BACKEND=1 dist/Forge-3.1
 
       - name: Name release asset
         shell: bash
@@ -118,7 +120,7 @@ jobs:
           TAG="${{ steps.release.outputs.tag }}"
           if ! gh release view "$TAG" --repo "${{ github.repository }}" >/dev/null 2>&1; then
             gh release create "$TAG" --repo "${{ github.repository }}" \
-              --title "Forge 3.0" --generate-notes
+              --title "Forge 3.1" --generate-notes
           fi
           gh release upload "$TAG" release-assets/* \
             --repo "${{ github.repository }}" --clobber

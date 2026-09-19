@@ -1,16 +1,16 @@
-# Forge 3.0
+# Forge 3.1
 
 [![CI](https://github.com/twaai/forge/actions/workflows/ci.yml/badge.svg)](https://github.com/twaai/forge/actions/workflows/ci.yml)
 [![Release](https://img.shields.io/github/v/release/twaai/forge)](https://github.com/twaai/forge/releases/latest)
 
-Forge 3.0 is a desktop prompt workshop presented as a focused chat application.
+Forge 3.1 is a desktop prompt workshop presented as a focused chat application.
 Describe a goal, receive a complete ready-to-run system prompt, then keep revising
 the same draft through normal conversation.
 
 This release replaces the terminal interface with a native desktop window and a
 saved-chat rail. The Forge drafting engine remains the mouth behind the UI.
 
-![Forge 3.0 chat interface](assets/forge-3-chat.png)
+![Forge 3.1 chat interface](assets/forge-3-chat.png)
 
 ## Download
 
@@ -18,18 +18,26 @@ The [latest release](https://github.com/twaai/forge/releases/latest) contains:
 
 | Platform | File |
 |---|---|
-| Windows x64 | `Forge-3.0-windows-x64.exe` |
-| Linux x64 | `Forge-3.0-linux-x64` |
-| macOS Apple Silicon | `Forge-3.0-macos-arm64` |
-| macOS Intel | `Forge-3.0-macos-x64` |
+| Windows x64 | `Forge-3.1-windows-x64.exe` |
+| Linux x64 | `Forge-3.1-linux-x64` |
+| macOS Apple Silicon | `Forge-3.1-macos-arm64` |
+| macOS Intel | `Forge-3.1-macos-x64` |
 
 SHA-256 checksums are published as `SHA256SUMS.txt` beside every release.
 
-## What changed in 3.0
+## What changed in 3.1
+
+- Removed local-model and Ollama choices from model and provider settings
+- Replaced retired OpenRouter `x-ai/grok-4-fast` with live `x-ai/grok-4.6`
+- Interleaved fallback models so one broken endpoint cannot consume every retry
+- Routed every hosted provider through the operating-system certificate store
+- Added frozen Linux Qt backend verification before publication
+
+## Core chat release
 
 - Full chat layout with streaming responses and Markdown rendering
 - Saved workshop threads with rename, search, reopen, and delete
-- Model picker covering OpenRouter, Orca, xAI, and local providers
+- Model picker covering verified hosted providers
 - Separate Forge configuration and encrypted local chat history
 - Stronger PURPOSE / ROLE / TASK / OUTPUT prompt compilation
 - Refusal recovery and document-continuation retry rails
@@ -62,13 +70,13 @@ Linux / macOS:
 ./forge.sh
 ```
 
-On Linux, install either the GTK WebKit runtime or PyQt before launching. The
-release binary includes the Qt backend.
+On Linux, the requirements install QtPy, PyQt6, and QtWebEngine. The release
+binary freezes that complete Qt backend and verifies it before publication.
 
 ## Local data
 
 Forge stores chats, model selection, and generated history keys under
-`~/.forge-3`. Provider API keys are read from the shared local FORGE 3.0 key
+`~/.forge-3`. Provider API keys are read from the shared local FORGE 3.1 key
 directory or environment variables. Credentials and chat history are never
 stored in this repository.
 

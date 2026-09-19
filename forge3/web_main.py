@@ -1,4 +1,4 @@
-"""Desktop window for FORGE 3.0."""
+"""Desktop window for FORGE 3.1."""
 
 from __future__ import annotations
 
@@ -14,6 +14,15 @@ sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(HERE))
 
 from forge3.web_api import Api  # noqa: E402
+
+
+def verify_gui_backend() -> None:
+    """Import every module required by the frozen Linux Qt renderer."""
+    if not sys.platform.startswith("linux"):
+        return
+
+    from qtpy import QtCore, QtWebChannel, QtWebEngineWidgets  # noqa: F401
+    from webview.platforms import qt  # noqa: F401
 
 
 def resolve_shell(
@@ -39,10 +48,14 @@ def resolve_shell(
         if html.is_file():
             return html
     tried = " ; ".join(str(path) for path in candidates)
-    raise FileNotFoundError(f"FORGE 3.0 shell not found. Tried: {tried}")
+    raise FileNotFoundError(f"FORGE 3.1 shell not found. Tried: {tried}")
 
 
 def main() -> int:
+    if os.environ.get("FORGE_VERIFY_GUI_BACKEND") == "1":
+        verify_gui_backend()
+        return 0
+
     html = resolve_shell()
     dev = "--dev" in sys.argv or os.getenv("FORGE3_DEBUG", "").lower() in {
         "1",
@@ -51,7 +64,7 @@ def main() -> int:
     }
     api = Api()
     window = webview.create_window(
-        title="FORGE 3.0",
+        title="FORGE 3.1",
         url=str(html),
         js_api=api,
         width=1180,

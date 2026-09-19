@@ -1,1 +1,3 @@
-"""Forge 3.0 chat application."""
+"""Forge 3.1 chat application."""
+
+__version__ = "3.1.0"
