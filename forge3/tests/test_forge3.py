@@ -99,6 +99,11 @@ def test_linux_release_freezes_and_verifies_qt_backend() -> None:
     assert "pywebview[qt]>=5.0.0; sys_platform == 'linux'" in project
     for module in ("qtpy", "PyQt6.QtWebEngineWidgets", "webview.platforms.qt"):
         assert module in spec
+    for library in ("libEGL.so.1", "libGLdispatch.so.0"):
+        assert library in spec
+        assert library in workflow
+    assert "libegl1 libglvnd0" in workflow
+    assert "pyi-archive_viewer -l dist/Forge-3.1" in workflow
     assert "FORGE_VERIFY_GUI_BACKEND=1 dist/Forge-3.1" in workflow
 
 

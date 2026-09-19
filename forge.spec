@@ -1,5 +1,7 @@
 # -*- mode: python ; coding: utf-8 -*-
 import sys
+import sysconfig
+from pathlib import Path
 
 from PyInstaller.utils.hooks import collect_all, collect_submodules
 
@@ -28,6 +30,25 @@ if sys.platform.startswith("linux"):
         "PyQt6.QtWidgets",
         "webview.platforms.qt",
     ]
+    # QtWebEngine loads EGL dynamically, so PyInstaller cannot infer these
+    # system libraries from Python imports. Bundle the Linux loader pair beside
+    # the executable; the bootloader adds its extraction directory to the
+    # dynamic-linker search path before Qt imports.
+    multiarch = sysconfig.get_config_var("MULTIARCH") or "x86_64-linux-gnu"
+    library_roots = (
+        Path("/usr/lib") / multiarch,
+        Path("/lib") / multiarch,
+        Path("/usr/lib64"),
+        Path("/lib64"),
+    )
+    for library_name in ("libEGL.so.1", "libGLdispatch.so.0"):
+        library = next(
+            (root / library_name for root in library_roots if (root / library_name).is_file()),
+            None,
+        )
+        if library is None:
+            raise FileNotFoundError(f"Linux release dependency missing: {library_name}")
+        binaries.append((str(library), "."))
 
 for package in ("anthropic", "cryptography", "openai", "truststore", "webview"):
     package_data, package_binaries, package_hidden = collect_all(package)

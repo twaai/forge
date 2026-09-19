@@ -60,6 +60,13 @@ jobs:
           python-version: "3.12"
           cache: pip
 
+      - name: Install Linux GUI build libraries
+        if: runner.os == 'Linux'
+        shell: bash
+        run: |
+          sudo apt-get update
+          sudo apt-get install --yes libegl1 libglvnd0
+
       - name: Install build dependencies
         shell: bash
         run: |
@@ -75,7 +82,10 @@ jobs:
       - name: Verify frozen Linux GUI backend
         if: runner.os == 'Linux'
         shell: bash
-        run: FORGE_VERIFY_GUI_BACKEND=1 dist/Forge-3.1
+        run: |
+          pyi-archive_viewer -l dist/Forge-3.1 | grep -F 'libEGL.so.1'
+          pyi-archive_viewer -l dist/Forge-3.1 | grep -F 'libGLdispatch.so.0'
+          FORGE_VERIFY_GUI_BACKEND=1 dist/Forge-3.1
 
       - name: Name release asset
         shell: bash
