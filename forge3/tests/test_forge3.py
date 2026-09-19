@@ -246,6 +246,14 @@ def test_provider_tls_uses_operating_system_store() -> None:
         del verifier
 
 
+def test_http_transport_is_an_explicit_release_dependency() -> None:
+    repository = ROOT.parent
+    requirements = (repository / "requirements.txt").read_text(encoding="utf-8")
+    project = (repository / "pyproject.toml").read_text(encoding="utf-8")
+    assert "httpx>=0.27.0" in requirements
+    assert '"httpx>=0.27.0"' in project
+
+
 def test_every_remote_model_path_uses_shared_transport() -> None:
     assert CONNECT_RETRIES == 4
     with provider_http_client(True) as client:
