@@ -1068,7 +1068,15 @@ kbd {
 
 /* keys ---------------------------------------------------------------- */
 
-.keylist { display: flex; flex-direction: column; gap: 8px; }
+.keylist { 
+  display: flex; 
+  flex-direction: column; 
+  gap: 8px; 
+  overflow-y: auto; 
+  max-height: 320px; 
+  scrollbar-width: thin; 
+  scrollbar-color: var(--signal-edge) transparent; 
+}
 
 .keycard {
   border: 1px solid var(--line);
@@ -1240,18 +1248,21 @@ kbd {
 
 .thread::-webkit-scrollbar,
 .chats::-webkit-scrollbar,
+.keylist::-webkit-scrollbar,
 .modellist::-webkit-scrollbar,
 .sheetbody::-webkit-scrollbar {
   width: 10px;
 }
 .thread::-webkit-scrollbar-track,
 .chats::-webkit-scrollbar-track,
+.keylist::-webkit-scrollbar-track,
 .modellist::-webkit-scrollbar-track,
 .sheetbody::-webkit-scrollbar-track {
   background: transparent;
 }
 .thread::-webkit-scrollbar-thumb,
 .chats::-webkit-scrollbar-thumb,
+.keylist::-webkit-scrollbar-thumb,
 .modellist::-webkit-scrollbar-thumb,
 .sheetbody::-webkit-scrollbar-thumb {
   background: var(--signal-edge);
