@@ -93,7 +93,7 @@ version tag. CI tests the same chat engine on Windows, Linux, and macOS.
 
 ## Maintainer
 
-Created and maintained by [twaai](https://github.com/twaai).
+Created and maintained by [twaai](https://github.com/twaai), with help from [JusDeFruis](https://github.com/JusDeFruis).
 
 ## License
 
